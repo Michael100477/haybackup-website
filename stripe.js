@@ -45,6 +45,18 @@ function stripePost(apiPath, body, key) {
     });
 }
 
+// GET from Stripe with the secret key (for retrieving sessions/subscriptions).
+function stripeGet(apiPath, key) {
+    return new Promise((resolve, reject) => {
+        const req = https.request({ host: "api.stripe.com", path: apiPath, method: "GET", timeout: 20000,
+            headers: { "Authorization": "Bearer " + key } },
+            res => { let d = ""; res.on("data", x => d += x); res.on("end", () => { let j = {}; try { j = JSON.parse(d); } catch (e) {} (res.statusCode >= 200 && res.statusCode < 300) ? resolve(j) : reject(new Error((j.error && j.error.message) || ("Stripe HTTP " + res.statusCode))); }); });
+        req.on("timeout", () => req.destroy(new Error("Stripe request timed out")));
+        req.on("error", reject);
+        req.end();
+    });
+}
+
 // Create a hosted Checkout Session for the subscription price; returns the session (with .url to redirect to).
 function createCheckoutSession({ email, successUrl, cancelUrl }) {
     const c = cfg();
@@ -59,6 +71,52 @@ function createCheckoutSession({ email, successUrl, cancelUrl }) {
     ];
     if (email) params.push("customer_email=" + encodeURIComponent(email));
     return stripePost("/v1/checkout/sessions", params.join("&"), c.secretKey);
+}
+
+// Retrieve a completed Checkout Session and make sure a subscriber/license record exists for it.
+// Race-proof: the success page can call this even before the webhook lands, so the buyer always
+// gets their key. Returns the subscriber record (with .licenseKey) or null if the session isn't paid.
+async function ensureSubscriberForSession(sessionId) {
+    const s = await getCheckoutSession(sessionId);
+    if (!s || !s.id) return null;
+    if (s.payment_status && s.payment_status === "unpaid" && s.status !== "complete") return null;
+    const email = (s.customer_details && s.customer_details.email) || s.customer_email || "";
+    const list = subs();
+    let rec = (s.subscription && list.find(x => x.subscriptionId === s.subscription))
+           || (email && list.find(x => x.email && x.email.toLowerCase() === email.toLowerCase())) || null;
+    if (!rec) { rec = { email, licenseKey: generateLicenseKey(), createdAt: new Date().toISOString() }; list.push(rec); }
+    if (email && !rec.email) rec.email = email;
+    rec.customerId = s.customer || rec.customerId;
+    rec.subscriptionId = s.subscription || rec.subscriptionId;
+    rec.status = rec.status || "active";
+    saveSubs(list);
+    return rec;
+}
+function getCheckoutSession(id) { return stripeGet("/v1/checkout/sessions/" + encodeURIComponent(id), cfg().secretKey); }
+
+// Validate a license key for the desktop app. Looks the key up, checks the LIVE Stripe subscription
+// state, and returns { valid, plan, status, expiresAt, message } — the shape desktop license.js expects.
+async function licenseForKey(key) {
+    key = String(key || "").trim();
+    if (!key) return { valid: false, message: "No license key provided." };
+    const list = subs();
+    const rec = list.find(x => x.licenseKey && x.licenseKey.toUpperCase() === key.toUpperCase());
+    if (!rec) return { valid: false, message: "License key not recognized. Check the key from your purchase confirmation." };
+    let status = rec.status || "active", expiresAt = rec.currentPeriodEnd || null;
+    if (rec.subscriptionId && cfg().secretKey) {
+        try {
+            const sub = await stripeGet("/v1/subscriptions/" + encodeURIComponent(rec.subscriptionId), cfg().secretKey);
+            if (sub && sub.status) {
+                status = sub.status;
+                if (sub.current_period_end) expiresAt = new Date(sub.current_period_end * 1000).toISOString();
+                rec.status = status; rec.currentPeriodEnd = expiresAt; saveSubs(list);
+            }
+        } catch (e) { /* Stripe unreachable -> fall back to the cached record status */ }
+    }
+    const active = (status === "active" || status === "trialing");
+    if (active && !expiresAt) expiresAt = new Date(Date.now() + 31 * 86400 * 1000).toISOString(); // safety window until a sub.* webhook sets the real period end
+    return { valid: active, plan: "Pro", status, expiresAt,
+             message: active ? "Subscription active — thanks for using HayBackup." : ("Subscription is " + status + ". Renew to keep updates & support.") };
 }
 
 // Verify a Stripe webhook signature (Stripe-Signature: "t=...,v1=..."). Needs the RAW request body.
@@ -100,4 +158,4 @@ function recordEvent(event) {
     return null;
 }
 
-module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, verifyWebhook, recordEvent, generateLicenseKey };
+module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, generateLicenseKey };

@@ -6,22 +6,77 @@
 <title>Thank you — HayBackup</title>
 <style>
   *{ box-sizing:border-box; margin:0; padding:0; }
-  body{ font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; color:#e5edf7; background:#070b16; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; }
+  body{ font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; color:#e5edf7; background:#070b16; min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; padding:1.5rem; }
   .bg{ position:fixed; inset:0; z-index:-1; background:radial-gradient(900px 700px at 50% 20%,rgba(34,211,238,.2),transparent 60%),linear-gradient(160deg,#070b16,#0a1426 55%,#06121c); }
-  .card{ max-width:480px; padding:2.4rem; }
+  .card{ max-width:560px; padding:2.4rem; }
   .check{ font-size:3.4rem; }
   h1{ font-size:1.8rem; margin:.6rem 0; }
-  p{ color:#9fb0c7; margin-bottom:1.6rem; }
-  a{ display:inline-block; font-weight:700; border-radius:11px; padding:.8rem 1.5rem; color:#04121f; background:linear-gradient(90deg,#22d3ee,#3b82f6); text-decoration:none; }
+  p{ color:#9fb0c7; margin-bottom:1.2rem; line-height:1.5; }
+  a.btn{ display:inline-block; font-weight:700; border-radius:11px; padding:.8rem 1.5rem; color:#04121f; background:linear-gradient(90deg,#22d3ee,#3b82f6); text-decoration:none; }
+  .keybox{ margin:1.2rem 0; padding:1rem 1.2rem; border:1px solid rgba(34,211,238,.35); border-radius:12px; background:rgba(34,211,238,.06); }
+  .keylabel{ font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; color:#7fd6e6; margin-bottom:.45rem; }
+  .key{ font-family:"Consolas","SF Mono",monospace; font-size:1.5rem; font-weight:700; color:#eaf6ff; letter-spacing:.04em; user-select:all; }
+  .copy{ margin-left:.6rem; font-size:.8rem; font-weight:700; cursor:pointer; border:0; border-radius:7px; padding:.35rem .6rem; color:#04121f; background:#7fd6e6; }
+  ol{ text-align:left; color:#c4d2e4; margin:0 auto 1.4rem; max-width:430px; line-height:1.6; padding-left:1.2rem; }
+  ol b{ color:#eaf6ff; }
+  .muted{ font-size:.85rem; color:#7c8aa0; }
+  .spin{ color:#9fb0c7; }
 </style>
 </head>
 <body>
 <div class="bg"></div>
 <div class="card">
   <div class="check">✅</div>
-  <h1>Thanks — you're on the list!</h1>
-  <p>We've recorded your interest and we'll be in touch with your subscription details shortly. In the meantime, you can install HayBackup and start your 7-day grace period right away.</p>
-  <a href="/">← Back to HayBackup</a>
+  <h1 id="hdr">Thank you!</h1>
+  <div id="body">
+    <p class="spin">Finalizing your subscription…</p>
+  </div>
+  <a class="btn" href="/">← Back to HayBackup</a>
 </div>
+<script>
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  var sid = new URLSearchParams(location.search).get('session_id');
+  var hdr = document.getElementById('hdr'), body = document.getElementById('body');
+
+  function showLead(){
+    hdr.textContent = "Thanks — you're on the list!";
+    body.innerHTML = "<p>We've recorded your interest and we'll be in touch with your subscription details shortly. "
+      + "In the meantime, you can install HayBackup and start your 7-day grace period right away.</p>";
+  }
+
+  function showLicense(key, email){
+    hdr.textContent = "You're subscribed — welcome to HayBackup!";
+    body.innerHTML =
+      "<p>Your subscription is active" + (email ? " (" + esc(email) + ")" : "") + ". Here is your license key — keep it safe:</p>"
+      + "<div class='keybox'><div class='keylabel'>Your license key</div>"
+      + "<span class='key' id='lk'>" + esc(key) + "</span>"
+      + "<button class='copy' onclick=\"navigator.clipboard.writeText('" + esc(key) + "');this.textContent='Copied';\">Copy</button></div>"
+      + "<p><b>Activate HayBackup in 4 steps:</b></p>"
+      + "<ol>"
+      + "<li>Open the <b>HayBackup</b> dashboard on your PC.</li>"
+      + "<li>Go to <b>Settings → License</b>.</li>"
+      + "<li>Paste your <b>license key</b> and click <b>Activate</b>.</li>"
+      + "<li>The banner turns to <b>✅ Active</b> — you're licensed on this PC (and any others on your network).</li>"
+      + "</ol>"
+      + "<p class='muted'>Lost this key later? It's tied to your email — contact support and we'll resend it. "
+      + "Manage or cancel anytime from the Renew / Manage license button in the app.</p>";
+  }
+
+  if(!sid){ showLead(); }
+  else {
+    var tries = 0;
+    (function poll(){
+      tries++;
+      fetch('/api/checkout/result?session_id=' + encodeURIComponent(sid))
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(d && d.ok && d.licenseKey){ showLicense(d.licenseKey, d.email); }
+          else if(d && d.pending && tries < 6){ setTimeout(poll, 2000); }   // webhook/payment settling
+          else { showLead(); }
+        })
+        .catch(function(){ if(tries < 6){ setTimeout(poll, 2000); } else { showLead(); } });
+    })();
+  }
+</script>
 </body>
 </html>

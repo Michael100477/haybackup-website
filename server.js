@@ -147,8 +147,19 @@ const handler = async (req, res) => {
         const b = await jsonBody(req);
         const base = baseUrl(req);
         try {
-            const s = await stripe.createCheckoutSession({ email: String(b.email || "").trim(), successUrl: base + "/success.html", cancelUrl: base + "/checkout.html" });
+            const s = await stripe.createCheckoutSession({ email: String(b.email || "").trim(), successUrl: base + "/success.html?session_id={CHECKOUT_SESSION_ID}", cancelUrl: base + "/checkout.html" });
             return json(res, 200, { ok: true, url: s.url });
+        } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    // After-checkout: the success page calls this with ?session_id=... to show the buyer their license key.
+    if (p === "/api/checkout/result" && req.method === "GET") {
+        const sid = (u.query.session_id || "").trim();
+        if (!sid) return json(res, 400, { ok: false, error: "Missing session_id." });
+        if (!stripe.configured()) return json(res, 400, { ok: false, error: "Payments not configured." });
+        try {
+            const rec = await stripe.ensureSubscriberForSession(sid);
+            if (!rec) return json(res, 200, { ok: false, pending: true, error: "Payment not completed yet." });
+            return json(res, 200, { ok: true, email: rec.email || "", licenseKey: rec.licenseKey });
         } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
     }
     // Stripe webhook (raw body for signature verification). Records paid subscribers + issues a license.
@@ -161,10 +172,16 @@ const handler = async (req, res) => {
         return json(res, 200, { received: true });
     }
 
-    // ---- licensing stub (the desktop app can point its license-server URL here for testing) ----
+    // ---- LICENSE SERVER: the desktop app GETs <this>?machine=&key= and reads { valid, plan, expiresAt, message }.
+    // Validates the key against the live Stripe subscription. Unknown/empty key -> valid:false (no expiresAt),
+    // which leaves the app in its install grace period rather than locking anyone out.
     if (p === "/api/license/check") {
-        const exp = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
-        return json(res, 200, { valid: true, plan: "Pro", expiresAt: exp, message: "Demo license (dev site — not a real subscription check yet)." });
+        try {
+            const key = (u.query.key || "").trim();
+            if (!stripe.configured()) return json(res, 200, { valid: false, plan: "Pro", message: "Licensing not configured yet." });
+            const r = await stripe.licenseForKey(key);
+            return json(res, 200, r);
+        } catch (e) { return json(res, 200, { valid: false, message: "License check error: " + e.message }); }
     }
 
     // ---- UPDATE FEED: the desktop app's "Check for updates" / daily check points here ----
