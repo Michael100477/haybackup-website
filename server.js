@@ -78,7 +78,17 @@ function verifyPw(pw) {
     try { return crypto.timingSafeEqual(Buffer.from(h), Buffer.from(a.hash)); } catch { return false; }
 }
 function parseCookies(req) { const o = {}; (req.headers.cookie || "").split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) o[p.slice(0, i).trim()] = p.slice(i + 1).trim(); }); return o; }
-function isAuthed(req) { const t = parseCookies(req).haybackup_admin; if (!t) return false; const e = sessions.get(t); if (!e || e < Date.now()) { sessions.delete(t); return false; } return true; }
+// Automation token (for unattended publishing/config — no human password needed).
+// Set ADMIN_API_TOKEN in the environment; send it as "Authorization: Bearer <token>" or "x-admin-token: <token>".
+function tokenAuthed(req) {
+    const tok = (process.env.ADMIN_API_TOKEN || "").trim();
+    if (!tok) return false;
+    let supplied = (req.headers["x-admin-token"] || "").toString().trim();
+    if (!supplied) { const m = /^Bearer\s+(.+)$/i.exec(req.headers["authorization"] || ""); if (m) supplied = m[1].trim(); }
+    if (!supplied) return false;
+    try { return supplied.length === tok.length && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(tok)); } catch { return false; }
+}
+function isAuthed(req) { if (tokenAuthed(req)) return true; const t = parseCookies(req).haybackup_admin; if (!t) return false; const e = sessions.get(t); if (!e || e < Date.now()) { sessions.delete(t); return false; } return true; }
 function setSession(res) { const t = crypto.randomBytes(32).toString("hex"); sessions.set(t, Date.now() + SESSION_MS); res.setHeader("Set-Cookie", `haybackup_admin=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 86400}`); }
 
 // ---------- helpers ----------

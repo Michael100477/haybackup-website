@@ -12,3 +12,6 @@ certs/
 task-register.log
 .env
 .DS_Store
+
+# local-only secrets (automation admin token, etc.) — never commit
+.local/
