@@ -28,6 +28,12 @@ function configured() { const c = cfg(); return !!(c.secretKey && c.priceId); }
 function subs() { try { return JSON.parse(fs.readFileSync(SUBS, "utf8")); } catch { return []; } }
 function saveSubs(a) { try { fs.mkdirSync(DATA, { recursive: true }); fs.writeFileSync(SUBS, JSON.stringify(a, null, 2)); } catch (e) {} }
 
+// Mark that we've emailed this license key (so the webhook doesn't re-send on retries/duplicate events).
+function markEmailed(licenseKey) {
+    const list = subs(); const rec = list.find(x => x.licenseKey === licenseKey);
+    if (rec) { rec.emailedKeyAt = new Date().toISOString(); saveSubs(list); }
+}
+
 function generateLicenseKey() {
     const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase();
     return "HB-" + seg() + "-" + seg() + "-" + seg() + "-" + seg();
@@ -158,4 +164,4 @@ function recordEvent(event) {
     return null;
 }
 
-module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, generateLicenseKey };
+module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, markEmailed, generateLicenseKey };

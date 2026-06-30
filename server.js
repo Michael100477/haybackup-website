@@ -10,6 +10,7 @@ const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
 const stripe = require("./stripe");
+const mailer = require("./mailer");
 
 const PORT = process.env.PORT || 8090;
 const HOST = process.env.HOST || "::";   // dual-stack (IPv4+IPv6) so the hostname works even when it resolves to IPv6 first
@@ -168,7 +169,11 @@ const handler = async (req, res) => {
         const c = stripe.cfg();
         if (c.webhookSecret && !stripe.verifyWebhook(raw, req.headers["stripe-signature"], c.webhookSecret)) return send(res, 400, "bad signature");
         let event = {}; try { event = JSON.parse(raw); } catch (e) { return send(res, 400, "bad json"); }
-        try { stripe.recordEvent(event); } catch (e) {}
+        let rec = null; try { rec = stripe.recordEvent(event); } catch (e) {}
+        // Email the buyer their license key once, on first completed checkout.
+        if (event.type === "checkout.session.completed" && rec && rec.email && rec.licenseKey && !rec.emailedKeyAt && mailer.configured()) {
+            mailer.sendLicenseEmail(rec).then(() => stripe.markEmailed(rec.licenseKey)).catch(e => console.error("license email failed:", e.message));
+        }
         return json(res, 200, { received: true });
     }
 
@@ -263,6 +268,34 @@ const handler = async (req, res) => {
     if (p === "/api/admin/subscribers" && req.method === "GET") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
         return json(res, 200, { ok: true, subscribers: stripe.subs() });
+    }
+    if (p === "/api/admin/email") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        if (req.method === "GET") { const c = mailer.cfg(); return json(res, 200, { ok: true, configured: mailer.configured(), config: { from: c.from, fromName: c.fromName, replyTo: c.replyTo, host: c.host, hasToken: !!c.token } }); }
+        if (req.method === "POST") {
+            const b = await jsonBody(req); const c = mailer.cfg();
+            if (typeof b.token === "string" && b.token.trim()) c.token = b.token.trim();   // keep existing if blank
+            if (typeof b.from === "string") c.from = b.from.trim();
+            if (typeof b.fromName === "string") c.fromName = b.fromName.trim();
+            if (typeof b.replyTo === "string") c.replyTo = b.replyTo.trim();
+            if (typeof b.host === "string" && b.host.trim()) c.host = b.host.trim();
+            mailer.saveCfg(c); return json(res, 200, { ok: true });
+        }
+    }
+    if (p === "/api/admin/email/test" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const to = String(b.to || "").trim();
+        if (!to) return json(res, 400, { ok: false, error: "Provide a 'to' address." });
+        try { await mailer.sendLicenseEmail({ email: to, licenseKey: b.key || "HB-TEST-TEST-TEST-TEST" }); return json(res, 200, { ok: true }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    if (p === "/api/admin/email/resend" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const key = String(b.key || "").trim();
+        const rec = stripe.subs().find(x => x.licenseKey && x.licenseKey.toUpperCase() === key.toUpperCase());
+        if (!rec || !rec.email) return json(res, 404, { ok: false, error: "No subscriber with that key (or no email on file)." });
+        try { await mailer.sendLicenseEmail(rec); stripe.markEmailed(rec.licenseKey); return json(res, 200, { ok: true, sentTo: rec.email }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
     }
     if (p === "/admin") { return serveStatic(req, res, "/admin.html"); }
     if (p === "/buy.html") { return serveStatic(req, res, "/index.html"); }   // the landing page is the buy page
