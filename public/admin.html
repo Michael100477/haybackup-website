@@ -85,11 +85,41 @@
         +'<label>Installer file (HayBackup-Setup.exe)</label><input id="relFile" type="file" accept=".exe">'
         +'<label>Version</label><input id="relVer" placeholder="e.g. 1.1.4">'
         +'<label>Release notes (optional)</label><textarea id="relNotes" rows="2" placeholder="What changed in this version"></textarea>'
-        +'<button onclick="bmPublish()">Publish update</button><div id="relMsg"></div>';
+        +'<button onclick="bmPublish()">Publish update</button><div id="relMsg"></div>'
+        +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
+        +'<h1 style="font-size:1.2rem">Payments (Stripe)</h1>'
+        +'<p class="sub">Connect Stripe so people can subscribe. Use a <strong>recurring Price ID</strong> from your Stripe product, your <strong>secret key</strong>, and (after deploy) a <strong>webhook signing secret</strong>.</p>'
+        +'<div id="stripeState" class="hint" style="margin-bottom:.6rem">Loading…</div>'
+        +'<label>Stripe secret key</label><input id="stSecret" type="password" placeholder="sk_live_… or sk_test_…">'
+        +'<label>Price ID (recurring)</label><input id="stPrice" placeholder="price_…">'
+        +'<label>Webhook signing secret</label><input id="stWebhook" type="password" placeholder="whsec_…">'
+        +'<p class="hint">Webhook endpoint (add this in Stripe → Developers → Webhooks): <code id="stHook"></code> &middot; event <code>checkout.session.completed</code></p>'
+        +'<button onclick="bmSaveStripe()">Save Stripe settings</button><div id="stMsg"></div>'
+        +'<h1 style="font-size:1.05rem;margin-top:1.4rem">Subscribers</h1>'
+        +'<div id="subsList" class="hint">Loading…</div>';
       ['plan','currency','price','period'].forEach(function(id){ document.getElementById(id).addEventListener('input',updatePreview); });
-      updatePreview(); bmLoadRelease();
+      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadSubs();
     });
   }
+  window.bmLoadStripe=function(){
+    fetch('/api/admin/stripe').then(function(r){return r.json();}).then(function(d){ var c=d.config||{};
+      var s=document.getElementById('stripeState'); if(s) s.innerHTML = d.configured ? '✅ Stripe is connected.' : '⚠️ Not connected yet — enter your keys below.';
+      var pe=document.getElementById('stPrice'); if(pe) pe.value=c.priceId||'';
+      var ks=document.getElementById('stSecret'); if(ks) ks.placeholder=c.hasSecret?'•••••• (unchanged)':'sk_live_… or sk_test_…';
+      var kw=document.getElementById('stWebhook'); if(kw) kw.placeholder=c.hasWebhook?'•••••• (unchanged)':'whsec_…';
+      var hook=document.getElementById('stHook'); if(hook) hook.textContent=location.origin+'/api/stripe/webhook';
+    }).catch(function(){});
+  };
+  window.bmSaveStripe=function(){ var m=document.getElementById('stMsg');
+    var body={ secretKey:document.getElementById('stSecret').value.trim(), priceId:document.getElementById('stPrice').value.trim(), webhookSecret:document.getElementById('stWebhook').value.trim() };
+    api('/api/admin/stripe','POST',body).then(function(r){ if(r.j.ok){ m.className='msg ok'; m.textContent='Stripe settings saved.'; document.getElementById('stSecret').value=''; document.getElementById('stWebhook').value=''; bmLoadStripe(); } else { m.className='msg err'; m.textContent=r.j.error||'Save failed.'; } });
+  };
+  window.bmLoadSubs=function(){ fetch('/api/admin/subscribers').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('subsList'); if(!el)return; var s=d.subscribers||[];
+    if(!s.length){ el.textContent='No subscribers yet.'; return; }
+    var h='<table style="width:100%;font-size:.82rem;border-collapse:collapse"><tr style="text-align:left;color:#9fb0c7"><th>Email</th><th>Status</th><th>License key</th><th>Renews</th></tr>';
+    s.slice().reverse().forEach(function(x){ h+='<tr><td>'+esc(x.email)+'</td><td>'+esc(x.status||'')+'</td><td><code>'+esc(x.licenseKey||'')+'</code></td><td>'+(x.currentPeriodEnd?new Date(x.currentPeriodEnd).toLocaleDateString():'')+'</td></tr>'; });
+    el.innerHTML=h+'</table>';
+  }).catch(function(){}); };
   window.bmLoadRelease=function(){ fetch('/api/admin/release').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('relCurrent'); if(!el)return; var r=d.release; el.innerHTML = (r&&r.version) ? ('Current published version: <strong>v'+esc(r.version)+'</strong>'+(r.publishedAt?(' &middot; '+new Date(r.publishedAt).toLocaleString()):'')) : 'No release published yet.'; }).catch(function(){}); };
   window.bmPublish=function(){ var m=document.getElementById('relMsg'); var f=document.getElementById('relFile').files[0]; var v=document.getElementById('relVer').value.trim(); var n=document.getElementById('relNotes').value.trim();
     if(!f){ m.className='msg err'; m.textContent='Choose the installer .exe.'; return; }

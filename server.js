@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 const crypto = require("crypto");
+const stripe = require("./stripe");
 
 const PORT = process.env.PORT || 8090;
 const HOST = process.env.HOST || "::";   // dual-stack (IPv4+IPv6) so the hostname works even when it resolves to IPv6 first
@@ -122,6 +123,27 @@ const handler = async (req, res) => {
         return json(res, 200, { ok: true, message: "Thanks! We'll be in touch about your subscription." });
     }
 
+    // ---- Stripe Checkout (subscription) ----
+    if (p === "/api/checkout/session" && req.method === "POST") {
+        if (!stripe.configured()) return json(res, 400, { ok: false, error: "Online payment isn't set up yet." });
+        const b = await jsonBody(req);
+        const scheme = req.socket.encrypted ? "https" : "http";
+        const base = scheme + "://" + (req.headers.host || ("localhost:" + PORT));
+        try {
+            const s = await stripe.createCheckoutSession({ email: String(b.email || "").trim(), successUrl: base + "/success.html", cancelUrl: base + "/checkout.html" });
+            return json(res, 200, { ok: true, url: s.url });
+        } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    // Stripe webhook (raw body for signature verification). Records paid subscribers + issues a license.
+    if (p === "/api/stripe/webhook" && req.method === "POST") {
+        const raw = await readBody(req);
+        const c = stripe.cfg();
+        if (c.webhookSecret && !stripe.verifyWebhook(raw, req.headers["stripe-signature"], c.webhookSecret)) return send(res, 400, "bad signature");
+        let event = {}; try { event = JSON.parse(raw); } catch (e) { return send(res, 400, "bad json"); }
+        try { stripe.recordEvent(event); } catch (e) {}
+        return json(res, 200, { received: true });
+    }
+
     // ---- licensing stub (the desktop app can point its license-server URL here for testing) ----
     if (p === "/api/license/check") {
         const exp = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
@@ -194,6 +216,21 @@ const handler = async (req, res) => {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
         if (req.method === "GET") return json(res, 200, { ok: true, pricing: pricing() });
         if (req.method === "POST") { const b = await jsonBody(req); return json(res, 200, { ok: true, pricing: savePricing(b) }); }
+    }
+    if (p === "/api/admin/stripe") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        if (req.method === "GET") { const c = stripe.cfg(); return json(res, 200, { ok: true, config: { priceId: c.priceId, hasSecret: !!c.secretKey, hasWebhook: !!c.webhookSecret }, configured: stripe.configured() }); }
+        if (req.method === "POST") {
+            const b = await jsonBody(req); const c = stripe.cfg();
+            if (typeof b.priceId === "string") c.priceId = b.priceId.trim();
+            if (typeof b.secretKey === "string" && b.secretKey.trim()) c.secretKey = b.secretKey.trim();      // keep existing if blank
+            if (typeof b.webhookSecret === "string" && b.webhookSecret.trim()) c.webhookSecret = b.webhookSecret.trim();
+            stripe.saveCfg(c); return json(res, 200, { ok: true });
+        }
+    }
+    if (p === "/api/admin/subscribers" && req.method === "GET") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        return json(res, 200, { ok: true, subscribers: stripe.subs() });
     }
     if (p === "/admin") { return serveStatic(req, res, "/admin.html"); }
     if (p === "/buy.html") { return serveStatic(req, res, "/index.html"); }   // the landing page is the buy page

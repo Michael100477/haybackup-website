@@ -60,12 +60,18 @@ fetch('/api/pricing').then(function(r){return r.json();}).then(function(d){ var 
 function submitForm(e){
   e.preventDefault();
   var btn=document.getElementById('btn'), msg=document.getElementById('msg');
-  var body={ name:document.getElementById('name').value.trim(), email:document.getElementById('email').value.trim(), note:document.getElementById('note').value.trim(), plan:PLAN_LABEL };
-  if(!body.email){ msg.className='msg err'; msg.textContent='Please enter your email.'; return false; }
-  btn.disabled=true; btn.textContent='Sending…';
-  fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  var email=document.getElementById('email').value.trim(), name=document.getElementById('name').value.trim(), note=document.getElementById('note').value.trim();
+  if(!email){ msg.className='msg err'; msg.textContent='Please enter your email.'; return false; }
+  btn.disabled=true; btn.textContent='Continuing…'; msg.className=''; msg.textContent='';
+  // Try Stripe Checkout first; if payments aren't connected yet, fall back to recording interest.
+  fetch('/api/checkout/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
     .then(function(r){return r.json();})
-    .then(function(d){ if(d.ok){ window.location.href='/success.html'; } else { msg.className='msg err'; msg.textContent=d.error||'Something went wrong.'; btn.disabled=false; btn.textContent='Continue →'; } })
+    .then(function(d){
+      if(d.ok && d.url){ window.location.href=d.url; return; }   // -> Stripe hosted checkout
+      return fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,email:email,note:note,plan:PLAN_LABEL})})
+        .then(function(r){return r.json();})
+        .then(function(d2){ if(d2.ok){ window.location.href='/success.html'; } else { msg.className='msg err'; msg.textContent=d2.error||'Something went wrong.'; btn.disabled=false; btn.textContent='Continue →'; } });
+    })
     .catch(function(){ msg.className='msg err'; msg.textContent='Network error — please try again.'; btn.disabled=false; btn.textContent='Continue →'; });
   return false;
 }
