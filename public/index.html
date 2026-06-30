@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HayBackup — Bulletproof Windows Backup, on Autopilot</title>
+<meta name="description" content="HayBackup protects whole drives, folders, databases, websites and other PCs on your network — automatically. Bootable images, no third-party tools. From $19/month.">
+<style>
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  :root{ --cyan:#22d3ee; --blue:#3b82f6; --ink:#e5edf7; --muted:#9fb0c7; }
+  html{ scroll-behavior:smooth; }
+  body{ font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; color:var(--ink); background:#070b16; line-height:1.6; overflow-x:hidden; }
+  #rain{ position:fixed; inset:0; z-index:-2; opacity:.5; }
+  .bg{ position:fixed; inset:0; z-index:-3; background:
+    radial-gradient(900px 700px at 20% 8%,rgba(34,211,238,.18),transparent 60%),
+    radial-gradient(900px 700px at 85% 92%,rgba(59,130,246,.20),transparent 60%),
+    linear-gradient(160deg,#070b16,#0a1426 55%,#06121c); }
+  a{ color:inherit; text-decoration:none; }
+  .wrap{ max-width:1100px; margin:auto; padding:0 1.2rem; }
+  .btn{ display:inline-block; font-weight:700; border-radius:11px; padding:.8rem 1.5rem; cursor:pointer; border:0; font-size:1rem; transition:transform .12s, box-shadow .2s; }
+  .btn-primary{ color:#04121f; background:linear-gradient(90deg,var(--cyan),var(--blue)); box-shadow:0 10px 28px rgba(34,211,238,.4); }
+  .btn-primary:hover{ transform:translateY(-2px); box-shadow:0 16px 36px rgba(34,211,238,.55); }
+  .btn-ghost{ color:#fff; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); }
+  .btn-ghost:hover{ background:rgba(255,255,255,.16); }
+  nav{ position:sticky; top:0; z-index:10; background:rgba(7,11,22,.72); backdrop-filter:blur(10px); border-bottom:1px solid rgba(148,163,184,.12); }
+  nav .row{ display:flex; align-items:center; justify-content:space-between; padding:.9rem 0; }
+  nav .logo{ font-weight:800; font-size:1.2rem; letter-spacing:.3px; }
+  nav .logo span{ color:var(--cyan); }
+  nav .links{ display:flex; align-items:center; gap:1.4rem; }
+  nav .links a.t{ color:var(--muted); font-size:.92rem; }
+  nav .links a.t:hover{ color:#fff; }
+  @media (max-width:720px){ nav .links a.t{ display:none; } }
+  .hero{ text-align:center; padding:4rem 0 3rem; }
+  .pill{ display:inline-block; font-size:.78rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--cyan); background:rgba(34,211,238,.12); border:1px solid rgba(34,211,238,.3); border-radius:999px; padding:.3rem .9rem; margin-bottom:1.2rem; }
+  .hero h1{ font-size:3.1rem; line-height:1.08; font-weight:850; letter-spacing:-.5px; margin-bottom:1rem; }
+  .hero h1 .grad{ background:linear-gradient(90deg,#7dd3fc,#67e8f9,#a5b4fc); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .hero p.sub{ font-size:1.2rem; color:var(--muted); max-width:700px; margin:0 auto 2rem; }
+  .cta-row{ display:flex; gap:.9rem; justify-content:center; flex-wrap:wrap; }
+  .trust{ margin-top:1.4rem; color:#7e8ca3; font-size:.85rem; }
+  .emblem{ filter:drop-shadow(0 10px 26px rgba(34,211,238,.45)); margin-bottom:1.4rem; }
+  .ring{ transform-origin:60px 60px; animation:spin 7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  section{ padding:3.4rem 0; }
+  h2.title{ text-align:center; font-size:2rem; font-weight:800; margin-bottom:.5rem; }
+  p.lead{ text-align:center; color:var(--muted); max-width:650px; margin:0 auto 2.4rem; }
+  .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1.1rem; }
+  .feat{ background:rgba(17,28,48,.6); border:1px solid rgba(148,163,184,.16); border-radius:14px; padding:1.3rem; }
+  .feat .ico{ font-size:1.7rem; }
+  .feat h3{ font-size:1.05rem; margin:.5rem 0 .3rem; }
+  .feat p{ color:var(--muted); font-size:.92rem; }
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:1.1rem; counter-reset:s; }
+  .step{ background:rgba(17,28,48,.55); border:1px solid rgba(148,163,184,.14); border-radius:14px; padding:1.4rem 1.3rem 1.3rem; position:relative; }
+  .step::before{ counter-increment:s; content:counter(s); position:absolute; top:-14px; left:1.2rem; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:800; color:#04121f; background:linear-gradient(90deg,var(--cyan),var(--blue)); }
+  .pricing{ max-width:460px; margin:0 auto; background:linear-gradient(180deg,rgba(34,211,238,.10),rgba(17,28,48,.7)); border:1px solid rgba(34,211,238,.35); border-radius:20px; padding:2.2rem; text-align:center; box-shadow:0 30px 70px rgba(0,0,0,.5); }
+  .pricing .plan{ font-size:.8rem; text-transform:uppercase; letter-spacing:.1em; color:var(--cyan); font-weight:700; }
+  .pricing .price{ font-size:3.2rem; font-weight:850; margin:.4rem 0 0; }
+  .pricing .price span{ font-size:1.1rem; color:var(--muted); font-weight:600; }
+  .pricing ul{ list-style:none; text-align:left; margin:1.4rem 0; }
+  .pricing li{ padding:.4rem 0; color:#cdd9ec; }
+  .pricing li::before{ content:"✓"; color:var(--cyan); font-weight:800; margin-right:.6rem; }
+  .pricing .btn{ width:100%; }
+  .pricing .fine{ color:#7e8ca3; font-size:.8rem; margin-top:.9rem; }
+  .faq{ max-width:760px; margin:0 auto; }
+  details{ background:rgba(17,28,48,.5); border:1px solid rgba(148,163,184,.14); border-radius:12px; padding:1rem 1.2rem; margin-bottom:.7rem; }
+  details summary{ cursor:pointer; font-weight:700; }
+  details p{ color:var(--muted); margin-top:.6rem; }
+  .cta-band{ text-align:center; background:linear-gradient(90deg,rgba(34,211,238,.12),rgba(59,130,246,.12)); border:1px solid rgba(34,211,238,.25); border-radius:20px; padding:2.6rem 1.4rem; }
+  .cta-band h2{ font-size:1.9rem; margin-bottom:.6rem; }
+  .cta-band p{ color:var(--muted); margin-bottom:1.4rem; }
+  footer{ border-top:1px solid rgba(148,163,184,.12); margin-top:1rem; }
+  footer .row{ display:flex; align-items:center; justify-content:space-between; padding:1.6rem 0; color:#6b7a92; font-size:.82rem; flex-wrap:wrap; gap:.6rem; }
+  footer a{ color:#9fb0c7; }
+  @media (max-width:760px){ .hero h1{ font-size:2.1rem; } .grid,.steps{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<canvas id="rain"></canvas>
+
+<nav><div class="wrap row">
+  <div class="logo">🗄️ Hay<span>Backup</span></div>
+  <div class="links">
+    <a class="t" href="#features">Features</a>
+    <a class="t" href="#how">How it works</a>
+    <a class="t" href="#pricing">Pricing</a>
+    <a class="t" href="#faq">FAQ</a>
+    <a class="btn btn-primary" href="/checkout.html" style="padding:.5rem 1.1rem">Subscribe</a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+  <header class="hero">
+    <svg class="emblem" viewBox="0 0 120 120" width="92" height="92" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+      <circle class="ring" cx="60" cy="60" r="52" fill="none" stroke="url(#g)" stroke-width="3" stroke-dasharray="20 13" stroke-linecap="round" opacity=".75"/>
+      <path d="M60 22 L92 34 V62 C92 84 78 96 60 102 C42 96 28 84 28 62 V34 Z" fill="rgba(56,189,248,.12)" stroke="url(#g)" stroke-width="2.5" stroke-linejoin="round"/>
+      <g fill="none" stroke="#cfe9ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="60" cy="49" rx="16" ry="6" fill="#0ea5e9" stroke="#bae6fd"/>
+        <path d="M44 49 V71 C44 74 51 77 60 77 C69 77 76 74 76 71 V49"/>
+        <path d="M44 60 C44 63 51 66 60 66 C69 66 76 63 76 60"/></g>
+    </svg>
+    <div class="pill">Set it. Forget it. Sleep at night.</div>
+    <h1>Your data, <span class="grad">backed up and bootable</span> — automatically.</h1>
+    <p class="sub">HayBackup protects whole drives, folders, databases, and websites — and even other PCs on your network — with one self-running app. Block-level images that actually boot. No third-party tools. No babysitting.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/checkout.html">Start your subscription →</a>
+      <a class="btn btn-ghost" href="#features">See what it does</a>
+    </div>
+    <div class="trust">🔒 Runs as a Windows service · 🪟 Any modern Windows PC or Server · ⚡ Installs in minutes</div>
+  </header>
+
+  <section id="features">
+    <h2 class="title">Everything you need to never lose data</h2>
+    <p class="lead">One dashboard. Five kinds of backup. Zero third-party software.</p>
+    <div class="grid">
+      <div class="feat"><div class="ico">💽</div><h3>Bootable disk images</h3><p>Block-level, bit-for-bit drive images saved as <code>.vhdx</code> — nothing skipped, even files in use. Mount to grab a file, or boot it as a VM.</p></div>
+      <div class="feat"><div class="ico">📁</div><h3>Files &amp; folders</h3><p>Schedule compressed backups of any folders to a local drive, USB, or your NAS.</p></div>
+      <div class="feat"><div class="ico">🗃️</div><h3>Databases &amp; websites</h3><p>One-click database dumps and full website snapshots (site + database) — with auto-detect so you don't hunt for names.</p></div>
+      <div class="feat"><div class="ico">🖥️</div><h3>Back up other PCs</h3><p>Drop a lightweight agent on any Windows machine and image or back it up from one place. Agents update themselves.</p></div>
+      <div class="feat"><div class="ico">⏰</div><h3>Smart schedules</h3><p>Full, incremental, weekly, monthly, or grandfather-father-son retention — pick a mode and forget it.</p></div>
+      <div class="feat"><div class="ico">📧</div><h3>Email alerts &amp; updates</h3><p>Know the moment a backup passes or fails, and get notified when a new version is ready.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2 class="title">Up and running in three steps</h2>
+    <p class="lead">No consultants, no manuals.</p>
+    <div class="steps">
+      <div class="step"><h3>Install</h3><p>Run the installer on the PC you want as your backup server. It sets itself up as an auto-start service.</p></div>
+      <div class="step"><h3>Point &amp; schedule</h3><p>Pick what to back up and where it goes — a drive, USB, or network share — and set a schedule.</p></div>
+      <div class="step"><h3>Relax</h3><p>It runs in the background and emails you the results. Restore in a couple of clicks when you need it.</p></div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <h2 class="title">Simple, honest pricing</h2>
+    <p class="lead">One subscription. Every feature. Cancel anytime.</p>
+    <div class="pricing">
+      <div class="plan" id="pPlan">HayBackup — Pro</div>
+      <div class="price"><span id="pPrice">$19</span><span id="pPeriod">/month</span></div>
+      <ul id="pFeatures">
+        <li>Unlimited backup jobs &amp; schedules</li>
+        <li>Bootable system images + incrementals</li>
+        <li>File, database &amp; website backups</li>
+        <li>Back up unlimited PCs on your network</li>
+        <li>Email alerts on pass/fail</li>
+        <li>Automatic updates &amp; priority support</li>
+      </ul>
+      <a class="btn btn-primary" href="/checkout.html" id="pCta">Subscribe now</a>
+      <div class="fine" id="pFine">7-day grace period included with every install. No credit card to try.</div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2 class="title">Questions, answered</h2>
+    <div class="faq">
+      <details><summary>Does it work on Windows Server?</summary><p>Yes — any modern Windows PC or Server. It uses only built-in Windows tools, so there's nothing third-party to install or license.</p></details>
+      <details><summary>Are the disk images really bootable?</summary><p>Yes. They're block-level <code>.vhdx</code> images you can mount to recover individual files, or attach to a Hyper-V Generation 2 VM and boot.</p></details>
+      <details><summary>Where do my backups go?</summary><p>Wherever you choose — a local drive, a USB drive, or a network share (NAS). Your data never passes through us.</p></details>
+      <details><summary>What happens if my subscription lapses?</summary><p>HayBackup keeps running and only shows reminders — it never interrupts your backups. Every install also includes a 7-day grace period.</p></details>
+      <details><summary>Can I back up other computers?</summary><p>Yes. Install a lightweight agent on any Windows PC and manage it from one dashboard. Agents update themselves automatically.</p></details>
+    </div>
+  </section>
+
+  <section>
+    <div class="cta-band">
+      <h2>Don't wait for a crash to wish you had a backup.</h2>
+      <p>Join the businesses that sleep better knowing HayBackup has their back.</p>
+      <a class="btn btn-primary" href="/checkout.html">Get protected today →</a>
+    </div>
+  </section>
+</div>
+
+<footer><div class="wrap row">
+  <div>© <span id="yr"></span> HayBackup · Built with only in-box Windows tools.</div>
+  <div><a href="#features">Features</a> · <a href="#pricing">Pricing</a> · <a href="/checkout.html">Subscribe</a></div>
+</div></footer>
+
+<script>
+  document.getElementById('yr').textContent = new Date().getFullYear();
+  // Pull live pricing from the admin-editable config so price changes show without editing this page.
+  fetch('/api/pricing').then(function(r){return r.json();}).then(function(d){ var p=d.pricing; if(!p) return;
+    function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+    set('pPlan',p.plan); set('pPrice',(p.currency||'$')+p.price); set('pPeriod','/'+(p.period||'month'));
+    set('pCta',p.cta||'Subscribe now'); set('pFine',p.fineprint||'');
+    var ul=document.getElementById('pFeatures'); if(ul && Array.isArray(p.features)){ ul.innerHTML=p.features.map(function(f){ return '<li>'+String(f).replace(/[&<>]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;'})[c];})+'</li>'; }).join(''); }
+  }).catch(function(){});
+  (function(){
+    var c=document.getElementById('rain'); if(!c||!c.getContext) return;
+    var x=c.getContext('2d'), F=16, cols=0, ys=[], vw=0, vh=0, dpr=0, last=0;
+    function size(){ var w=Math.max(1,Math.floor(window.innerWidth)), h=Math.max(1,Math.floor(window.innerHeight)), r=window.devicePixelRatio||1;
+      if(w===vw&&h===vh&&r===dpr) return; vw=w; vh=h; dpr=r; c.width=Math.floor(w*r); c.height=Math.floor(h*r); c.style.width=w+'px'; c.style.height=h+'px'; x.setTransform(r,0,0,r,0,0);
+      var n=[], nc=Math.ceil(w/F); for(var i=0;i<nc;i++){ n[i]=(i<ys.length)?ys[i]:Math.floor(Math.random()*(h/F)); } ys=n; cols=nc; x.fillStyle='rgba(7,11,22,.25)'; x.fillRect(0,0,vw,vh); }
+    function frame(t){ size(); if(t-last>=55){ last=t; x.fillStyle='rgba(7,11,22,.12)'; x.fillRect(0,0,vw,vh); x.font=F+'px monospace'; x.textBaseline='top';
+      for(var i=0;i<cols;i++){ var ch=(Math.random()<0.5)?'0':'1', px=i*F, py=ys[i]*F; x.fillStyle=(Math.random()<0.06)?'#a5ecff':'#2f7fb5'; x.fillText(ch,px,py); ys[i]++; if(py>vh&&Math.random()>0.965) ys[i]=0; } }
+      requestAnimationFrame(frame); }
+    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    if(!reduce){ requestAnimationFrame(frame); } else { size(); }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# dependencies (this app is zero-dep, but just in case)
+node_modules/
+
+# runtime state — lives in a Railway volume (DATA_DIR), not the repo
+data/
+
+# local dev TLS cert (Railway terminates TLS at the edge)
+certs/
+
+# logs / scratch
+*.log
+task-register.log
+.env
+.DS_Store

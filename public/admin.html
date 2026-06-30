@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin — HayBackup</title>
+<style>
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; color:#e5edf7; background:#070b16; min-height:100vh; }
+  .bg{ position:fixed; inset:0; z-index:-1; background:radial-gradient(900px 700px at 20% 8%,rgba(34,211,238,.16),transparent 60%),radial-gradient(900px 700px at 85% 92%,rgba(59,130,246,.18),transparent 60%),linear-gradient(160deg,#070b16,#0a1426 55%,#06121c); }
+  a{ color:#7dd3fc; text-decoration:none; }
+  .wrap{ max-width:640px; margin:0 auto; padding:1.4rem 1.2rem 4rem; }
+  .top{ display:flex; align-items:center; justify-content:space-between; padding:.6rem 0 1.4rem; }
+  .logo{ font-weight:800; font-size:1.15rem; } .logo span{ color:#22d3ee; }
+  .card{ background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.18); border-radius:18px; padding:2rem; backdrop-filter:blur(14px); box-shadow:0 30px 70px rgba(0,0,0,.5); }
+  h1{ font-size:1.5rem; margin-bottom:.3rem; } .sub{ color:#9fb0c7; margin-bottom:1.3rem; font-size:.92rem; }
+  label{ display:block; font-weight:600; font-size:.82rem; margin:.85rem 0 .3rem; color:#cbd5e1; }
+  input,textarea{ width:100%; padding:.7rem .8rem; border-radius:10px; border:1px solid rgba(148,163,184,.25); background:rgba(2,6,23,.55); color:#e6eefb; font:inherit; outline:none; }
+  input:focus,textarea:focus{ border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.18); }
+  .row{ display:flex; gap:.6rem; } .row>div{ flex:1; }
+  button{ margin-top:1.3rem; border:0; border-radius:11px; padding:.8rem 1.4rem; font-weight:700; font-size:1rem; color:#04121f; background:linear-gradient(90deg,#22d3ee,#3b82f6); cursor:pointer; }
+  button.ghost{ background:rgba(255,255,255,.1); color:#fff; }
+  button:disabled{ opacity:.6; cursor:default; }
+  .msg{ margin-top:1rem; padding:.7rem .9rem; border-radius:10px; font-size:.9rem; }
+  .ok{ background:rgba(34,197,94,.15); border:1px solid rgba(34,197,94,.4); color:#bbf7d0; }
+  .err{ background:rgba(239,68,68,.15); border:1px solid rgba(239,68,68,.4); color:#fecaca; }
+  .preview{ background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.25); border-radius:12px; padding:1rem 1.2rem; margin-top:1rem; }
+  .preview .pp{ font-size:2rem; font-weight:850; } .preview .pp small{ font-size:1rem; color:#9fb0c7; font-weight:600; }
+  .hint{ color:#7e8ca3; font-size:.78rem; margin-top:.2rem; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="wrap">
+  <div class="top"><div class="logo">🗄️ Hay<span>Backup</span> · Admin</div><a href="/" target="_blank">View site ↗</a></div>
+  <div class="card" id="card"><div class="sub">Loading…</div></div>
+</div>
+<script>
+  var card=document.getElementById('card');
+  function api(path, method, body){ return fetch(path,{method:method||'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){return{status:r.status,j:j};});}); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+
+  function load(){ api('/api/admin/state').then(function(r){ var s=r.j; if(s.needsSetup) return renderSetup(); if(!s.authed) return renderLogin(); renderEditor(); }); }
+
+  function renderSetup(){
+    card.innerHTML='<h1>Create your admin password</h1><p class="sub">This protects the pricing editor. Choose a strong password (min 8 characters).</p>'
+      +'<label>Password</label><input id="pw" type="password" autofocus>'
+      +'<label>Confirm password</label><input id="pw2" type="password">'
+      +'<button id="b" onclick="doSetup()">Create &amp; sign in</button><div id="m"></div>';
+  }
+  window.doSetup=function(){ var pw=document.getElementById('pw').value, pw2=document.getElementById('pw2').value, m=document.getElementById('m');
+    if(pw.length<8){ m.className='msg err'; m.textContent='Password must be at least 8 characters.'; return; }
+    if(pw!==pw2){ m.className='msg err'; m.textContent='Passwords do not match.'; return; }
+    api('/api/admin/setup','POST',{password:pw}).then(function(r){ if(r.j.ok) renderEditor(); else { m.className='msg err'; m.textContent=r.j.error||'Failed.'; } });
+  };
+
+  function renderLogin(){
+    card.innerHTML='<h1>Admin sign in</h1><p class="sub">Enter your admin password to edit pricing.</p>'
+      +'<label>Password</label><input id="pw" type="password" autofocus onkeydown="if(event.key===\'Enter\')doLogin()">'
+      +'<button id="b" onclick="doLogin()">Sign in</button><div id="m"></div>';
+  }
+  window.doLogin=function(){ var pw=document.getElementById('pw').value, m=document.getElementById('m');
+    api('/api/admin/login','POST',{password:pw}).then(function(r){ if(r.j.ok) renderEditor(); else { m.className='msg err'; m.textContent=r.j.error||'Incorrect password.'; } });
+  };
+
+  function renderEditor(){
+    api('/api/admin/pricing').then(function(r){
+      if(r.status===401) return renderLogin();
+      var p=r.j.pricing||{};
+      card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h1>Pricing</h1><button class="ghost" style="margin:0" onclick="doLogout()">Sign out</button></div>'
+        +'<p class="sub">Edit your plan and price. Changes appear on the website immediately.</p>'
+        +'<label>Plan name</label><input id="plan" value="'+esc(p.plan)+'">'
+        +'<div class="row"><div><label>Currency</label><input id="currency" value="'+esc(p.currency)+'"></div>'
+        +'<div><label>Price</label><input id="price" type="number" step="0.01" value="'+esc(p.price)+'"></div>'
+        +'<div><label>Per</label><input id="period" value="'+esc(p.period)+'"></div></div>'
+        +'<label>Features <span class="hint">(one per line)</span></label><textarea id="features" rows="6">'+esc((p.features||[]).join('\n'))+'</textarea>'
+        +'<label>Button text</label><input id="cta" value="'+esc(p.cta)+'">'
+        +'<label>Fine print</label><input id="fineprint" value="'+esc(p.fineprint)+'">'
+        +'<div class="preview"><div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#22d3ee;font-weight:700" id="prPlan"></div><div class="pp"><span id="prPrice"></span></div></div>'
+        +'<button id="b" onclick="doSave()">Save changes</button> <a href="/" target="_blank" style="margin-left:.6rem">Preview site ↗</a><div id="m"></div>'
+        +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
+        +'<h1 style="font-size:1.2rem">Software updates</h1>'
+        +'<p class="sub">Publish a new installer here. Every HayBackup install checks this, notifies the user, and can update itself.</p>'
+        +'<div id="relCurrent" class="hint" style="margin-bottom:.6rem">Loading current release…</div>'
+        +'<label>Installer file (HayBackup-Setup.exe)</label><input id="relFile" type="file" accept=".exe">'
+        +'<label>Version</label><input id="relVer" placeholder="e.g. 1.1.4">'
+        +'<label>Release notes (optional)</label><textarea id="relNotes" rows="2" placeholder="What changed in this version"></textarea>'
+        +'<button onclick="bmPublish()">Publish update</button><div id="relMsg"></div>';
+      ['plan','currency','price','period'].forEach(function(id){ document.getElementById(id).addEventListener('input',updatePreview); });
+      updatePreview(); bmLoadRelease();
+    });
+  }
+  window.bmLoadRelease=function(){ fetch('/api/admin/release').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('relCurrent'); if(!el)return; var r=d.release; el.innerHTML = (r&&r.version) ? ('Current published version: <strong>v'+esc(r.version)+'</strong>'+(r.publishedAt?(' &middot; '+new Date(r.publishedAt).toLocaleString()):'')) : 'No release published yet.'; }).catch(function(){}); };
+  window.bmPublish=function(){ var m=document.getElementById('relMsg'); var f=document.getElementById('relFile').files[0]; var v=document.getElementById('relVer').value.trim(); var n=document.getElementById('relNotes').value.trim();
+    if(!f){ m.className='msg err'; m.textContent='Choose the installer .exe.'; return; }
+    if(!v){ m.className='msg err'; m.textContent='Enter a version (e.g. 1.1.4).'; return; }
+    m.className='msg'; m.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB…';
+    fetch('/api/admin/release',{method:'PUT',headers:{'x-version':v,'x-notes':encodeURIComponent(n)},body:f}).then(function(r){return r.json();}).then(function(d){ if(d.ok){ m.className='msg ok'; m.textContent='Published v'+d.release.version+'. Installs will see it on their next check.'; document.getElementById('relFile').value=''; bmLoadRelease(); } else { m.className='msg err'; m.textContent=d.error||'Publish failed.'; } }).catch(function(){ m.className='msg err'; m.textContent='Upload failed.'; }); };
+  function updatePreview(){ var c=document.getElementById('currency').value, pr=document.getElementById('price').value, per=document.getElementById('period').value, pl=document.getElementById('plan').value;
+    document.getElementById('prPlan').textContent=pl; document.getElementById('prPrice').innerHTML=esc(c)+esc(pr)+'<small>/'+esc(per)+'</small>'; }
+  window.doSave=function(){ var m=document.getElementById('m'); var body={ plan:document.getElementById('plan').value, currency:document.getElementById('currency').value, price:document.getElementById('price').value, period:document.getElementById('period').value, features:document.getElementById('features').value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean), cta:document.getElementById('cta').value, fineprint:document.getElementById('fineprint').value };
+    api('/api/admin/pricing','POST',body).then(function(r){ if(r.j.ok){ m.className='msg ok'; m.textContent='Saved. The website is updated.'; } else { m.className='msg err'; m.textContent=r.j.error||'Save failed.'; } });
+  };
+  window.doLogout=function(){ api('/api/admin/logout','POST').then(function(){ renderLogin(); }); };
+
+  load();
+</script>
+</body>
+</html>

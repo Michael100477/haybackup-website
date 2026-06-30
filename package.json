@@ -1,0 +1,13 @@
+{
+  "name": "haybackup-website",
+  "version": "1.0.0",
+  "description": "HayBackup public marketing & purchase website (dev build, zero dependencies).",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
