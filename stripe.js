@@ -98,7 +98,7 @@ function getCheckoutSession(id) { return stripeGet("/v1/checkout/sessions/" + en
 // state, and returns { valid, plan, status, expiresAt, message } — the shape desktop license.js expects.
 async function licenseForKey(key) {
     key = String(key || "").trim();
-    if (!key) return { valid: false, message: "No license key provided." };
+    if (!key) return { valid: false, message: "No license key entered yet." };
     const list = subs();
     const rec = list.find(x => x.licenseKey && x.licenseKey.toUpperCase() === key.toUpperCase());
     if (!rec) return { valid: false, message: "License key not recognized. Check the key from your purchase confirmation." };
