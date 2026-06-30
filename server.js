@@ -96,6 +96,14 @@ function send(res, code, body, type) { res.writeHead(code, { "Content-Type": typ
 function json(res, code, obj) { send(res, code, JSON.stringify(obj), TYPES[".json"]); }
 function readBody(req) { return new Promise(resolve => { let d = ""; req.on("data", c => { d += c; if (d.length > 1e6) req.destroy(); }); req.on("end", () => resolve(d)); }); }
 async function jsonBody(req) { try { return JSON.parse((await readBody(req)) || "{}"); } catch { return {}; } }
+// Public base URL. Behind a TLS-terminating proxy (Railway) the socket is plain HTTP, so trust
+// X-Forwarded-Proto/Host to reconstruct the original https:// origin clients actually used.
+function baseUrl(req) {
+    const xproto = (req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    const scheme = xproto || (req.socket.encrypted ? "https" : "http");
+    const host = (req.headers["x-forwarded-host"] || req.headers.host || ("localhost:" + PORT)).split(",")[0].trim();
+    return scheme + "://" + host;
+}
 
 // ---------- releases (the update feed the desktop app checks) ----------
 function release() { try { return JSON.parse(fs.readFileSync(RELEASE_FILE, "utf8")); } catch { return null; } }
@@ -137,8 +145,7 @@ const handler = async (req, res) => {
     if (p === "/api/checkout/session" && req.method === "POST") {
         if (!stripe.configured()) return json(res, 400, { ok: false, error: "Online payment isn't set up yet." });
         const b = await jsonBody(req);
-        const scheme = req.socket.encrypted ? "https" : "http";
-        const base = scheme + "://" + (req.headers.host || ("localhost:" + PORT));
+        const base = baseUrl(req);
         try {
             const s = await stripe.createCheckoutSession({ email: String(b.email || "").trim(), successUrl: base + "/success.html", cancelUrl: base + "/checkout.html" });
             return json(res, 200, { ok: true, url: s.url });
@@ -164,9 +171,7 @@ const handler = async (req, res) => {
     if (p === "/api/update/latest" && req.method === "GET") {
         const r = release();
         if (!r || !r.version) return json(res, 404, { ok: false, error: "No release published yet." });
-        const scheme = req.socket.encrypted ? "https" : "http";
-        const base = scheme + "://" + (req.headers.host || ("localhost:" + PORT));
-        return json(res, 200, { version: r.version, url: base + "/download/installer", sha256: r.sha256 || null, notes: r.notes || "" });
+        return json(res, 200, { version: r.version, url: baseUrl(req) + "/download/installer", sha256: r.sha256 || null, notes: r.notes || "" });
     }
     if (p === "/download/installer" && (req.method === "GET" || req.method === "HEAD")) {
         const r = release();
