@@ -63,21 +63,18 @@
     api('/api/admin/login','POST',{password:pw}).then(function(r){ if(r.j.ok) renderEditor(); else { m.className='msg err'; m.textContent=r.j.error||'Incorrect password.'; } });
   };
 
+  var CFG=null;
   function renderEditor(){
-    api('/api/admin/pricing').then(function(r){
+    api('/api/admin/tiers').then(function(r){
       if(r.status===401) return renderLogin();
-      var p=r.j.pricing||{};
-      card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h1>Pricing</h1><button class="ghost" style="margin:0" onclick="doLogout()">Sign out</button></div>'
-        +'<p class="sub">Edit your plan and price. Changes appear on the website immediately.</p>'
-        +'<label>Plan name</label><input id="plan" value="'+esc(p.plan)+'">'
-        +'<div class="row"><div><label>Currency</label><input id="currency" value="'+esc(p.currency)+'"></div>'
-        +'<div><label>Price</label><input id="price" type="number" step="0.01" value="'+esc(p.price)+'"></div>'
-        +'<div><label>Per</label><input id="period" value="'+esc(p.period)+'"></div></div>'
-        +'<label>Features <span class="hint">(one per line)</span></label><textarea id="features" rows="6">'+esc((p.features||[]).join('\n'))+'</textarea>'
-        +'<label>Button text</label><input id="cta" value="'+esc(p.cta)+'">'
-        +'<label>Fine print</label><input id="fineprint" value="'+esc(p.fineprint)+'">'
-        +'<div class="preview"><div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:#22d3ee;font-weight:700" id="prPlan"></div><div class="pp"><span id="prPrice"></span></div></div>'
-        +'<button id="b" onclick="doSave()">Save changes</button> <a href="/" target="_blank" style="margin-left:.6rem">Preview site ↗</a><div id="m"></div>'
+      CFG=r.j||{}; if(!Array.isArray(CFG.tiers)) CFG.tiers=[];
+      card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h1>Plans &amp; pricing</h1><button class="ghost" style="margin:0" onclick="doLogout()">Sign out</button></div>'
+        +'<p class="sub">Add, edit, price, and enable/disable plans — no code needed. Changing a price auto-creates a new Stripe price. Leave a single plan enabled to show a one-plan page.</p>'
+        +'<div class="row"><div><label>Currency</label><input id="tCur" value="'+esc(CFG.currency||"$")+'"></div>'
+        +'<div style="flex:2"><label>Checkout button text</label><input id="tCta" value="'+esc(CFG.cta||"")+'"></div></div>'
+        +'<label>Fine print</label><input id="tFine" value="'+esc(CFG.fineprint||"")+'">'
+        +'<div id="plansWrap"></div>'
+        +'<button class="ghost" onclick="bmAddTier()">+ Add plan</button> <button onclick="bmSaveTiers()">Save plans</button> <a href="/" target="_blank" style="margin-left:.4rem">Preview site ↗</a><div id="tMsg"></div>'
         +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
         +'<h1 style="font-size:1.2rem">Software updates</h1>'
         +'<p class="sub">Publish a new installer here. Every HayBackup install checks this, notifies the user, and can update itself.</p>'
@@ -111,8 +108,7 @@
         +'<p class="sub">Everyone who created an account. Email them a password-reset link or resend their license key.</p>'
         +'<div id="uMsg"></div>'
         +'<div id="usersList" class="hint">Loading…</div>';
-      ['plan','currency','price','period'].forEach(function(id){ document.getElementById(id).addEventListener('input',updatePreview); });
-      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadPromos(); bmLoadUsers();
+      bmRenderTiers(); bmLoadRelease(); bmLoadStripe(); bmLoadPromos(); bmLoadUsers();
     });
   }
   window.bmLoadStripe=function(){
@@ -173,10 +169,37 @@
     if(!v){ m.className='msg err'; m.textContent='Enter a version (e.g. 1.1.4).'; return; }
     m.className='msg'; m.textContent='Uploading '+(f.size/1048576).toFixed(1)+' MB…';
     fetch('/api/admin/release',{method:'PUT',headers:{'x-version':v,'x-notes':encodeURIComponent(n)},body:f}).then(function(r){return r.json();}).then(function(d){ if(d.ok){ m.className='msg ok'; m.textContent='Published v'+d.release.version+'. Installs will see it on their next check.'; document.getElementById('relFile').value=''; bmLoadRelease(); } else { m.className='msg err'; m.textContent=d.error||'Publish failed.'; } }).catch(function(){ m.className='msg err'; m.textContent='Upload failed.'; }); };
-  function updatePreview(){ var c=document.getElementById('currency').value, pr=document.getElementById('price').value, per=document.getElementById('period').value, pl=document.getElementById('plan').value;
-    document.getElementById('prPlan').textContent=pl; document.getElementById('prPrice').innerHTML=esc(c)+esc(pr)+'<small>/'+esc(per)+'</small>'; }
-  window.doSave=function(){ var m=document.getElementById('m'); var body={ plan:document.getElementById('plan').value, currency:document.getElementById('currency').value, price:document.getElementById('price').value, period:document.getElementById('period').value, features:document.getElementById('features').value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean), cta:document.getElementById('cta').value, fineprint:document.getElementById('fineprint').value };
-    api('/api/admin/pricing','POST',body).then(function(r){ if(r.j.ok){ m.className='msg ok'; m.textContent='Saved. The website is updated.'; } else { m.className='msg err'; m.textContent=r.j.error||'Save failed.'; } });
+  var SEL='style="width:100%;padding:.6rem;border-radius:10px;background:rgba(2,6,23,.55);color:#e6eefb;border:1px solid rgba(148,163,184,.25)"';
+  window.bmRenderTiers=function(){ var w=document.getElementById('plansWrap'); if(!w)return; var h='';
+    if(!CFG.tiers.length) h='<p class="hint">No plans yet — add one below.</p>';
+    CFG.tiers.forEach(function(t,i){
+      h+='<div style="border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:1rem;margin:.8rem 0;background:rgba(2,6,23,.25)">'
+        +'<div class="row"><div style="flex:2"><label>Plan name</label><input data-t="'+i+'" data-f="name" value="'+esc(t.name)+'"></div>'
+        +'<div><label>Price</label><input type="number" step="0.01" data-t="'+i+'" data-f="price" value="'+esc(t.price)+'"></div>'
+        +'<div><label>Per</label><select data-t="'+i+'" data-f="period" '+SEL+'><option value="month"'+(t.period!=='year'?' selected':'')+'>month</option><option value="year"'+(t.period==='year'?' selected':'')+'>year</option></select></div></div>'
+        +'<label>Features <span class="hint">(one per line)</span></label><textarea rows="4" data-t="'+i+'" data-f="features">'+esc((t.features||[]).join('\n'))+'</textarea>'
+        +'<div style="display:flex;gap:1.2rem;align-items:center;margin-top:.6rem;flex-wrap:wrap">'
+        +'<label style="margin:0;font-weight:400"><input type="checkbox" data-t="'+i+'" data-f="enabled" '+(t.enabled!==false?'checked':'')+'> Enabled</label>'
+        +'<label style="margin:0;font-weight:400"><input type="checkbox" data-t="'+i+'" data-f="popular" '+(t.popular?'checked':'')+'> Most popular</label>'
+        +'<span class="hint">'+(t.hasStripePrice?'✅ Stripe price ready':'⚠️ price created when you save')+'</span>'
+        +'<button class="ghost" style="margin:0 0 0 auto;padding:.3rem .6rem;font-size:.8rem" onclick="bmRemoveTier('+i+')">Remove</button></div></div>';
+    });
+    w.innerHTML=h;
+  };
+  function bmCollectTiers(){
+    document.querySelectorAll('#plansWrap [data-t]').forEach(function(el){ var i=+el.getAttribute('data-t'), f=el.getAttribute('data-f'); var t=CFG.tiers[i]; if(!t)return;
+      if(f==='enabled'||f==='popular') t[f]=el.checked;
+      else if(f==='features') t[f]=el.value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+      else if(f==='price') t[f]=parseFloat(el.value)||0;
+      else t[f]=el.value; });
+    CFG.currency=document.getElementById('tCur').value; CFG.cta=document.getElementById('tCta').value; CFG.fineprint=document.getElementById('tFine').value;
+  }
+  window.bmAddTier=function(){ bmCollectTiers(); CFG.tiers.push({name:'New plan',price:0,period:'month',features:[],enabled:true,popular:false}); bmRenderTiers(); };
+  window.bmRemoveTier=function(i){ bmCollectTiers(); if(confirm('Remove this plan? (Existing subscribers are not affected.)')){ CFG.tiers.splice(i,1); bmRenderTiers(); } };
+  window.bmSaveTiers=function(){ bmCollectTiers(); var m=document.getElementById('tMsg'); m.className='msg'; m.textContent='Saving (syncing Stripe prices)…';
+    api('/api/admin/tiers','POST',{currency:CFG.currency,cta:CFG.cta,fineprint:CFG.fineprint,tiers:CFG.tiers}).then(function(r){
+      if(r.j.ok){ CFG=r.j.config||CFG; if(!Array.isArray(CFG.tiers))CFG.tiers=[]; m.className='msg '+(r.j.warning?'err':'ok'); m.textContent=r.j.warning||'Plans saved — the website is updated.'; bmRenderTiers(); }
+      else { m.className='msg err'; m.textContent=r.j.error||'Save failed.'; } });
   };
   window.doLogout=function(){ api('/api/admin/logout','POST').then(function(){ renderLogin(); }); };
 

@@ -12,6 +12,7 @@ const crypto = require("crypto");
 const stripe = require("./stripe");
 const mailer = require("./mailer");
 const accounts = require("./accounts");
+const tiers = require("./tiers");
 
 const PORT = process.env.PORT || 8090;
 const HOST = process.env.HOST || "::";   // dual-stack (IPv4+IPv6) so the hostname works even when it resolves to IPv6 first
@@ -138,7 +139,12 @@ const handler = async (req, res) => {
     if (p === "/healthz") return json(res, 200, { ok: true, service: "haybackup-website", ts: new Date().toISOString() });
 
     // ---- public pricing (landing page + checkout read this) ----
-    if (p === "/api/pricing" && req.method === "GET") return json(res, 200, { ok: true, pricing: pricing() });
+    if (p === "/api/pricing" && req.method === "GET") {
+        const pc = tiers.publicConfig();
+        const first = pc.tiers.find(t => t.popular) || pc.tiers[0] || {};
+        const legacy = { plan: "HayBackup — " + (first.name || "Pro"), currency: pc.currency, price: first.price, period: first.period, features: first.features || [], cta: pc.cta, fineprint: pc.fineprint };
+        return json(res, 200, { ok: true, pricing: legacy, tiers: pc.tiers, currency: pc.currency, cta: pc.cta, fineprint: pc.fineprint });
+    }
 
     // ---- checkout interest capture ----
     if (p === "/api/checkout" && req.method === "POST") {
@@ -154,9 +160,12 @@ const handler = async (req, res) => {
         if (!stripe.configured()) return json(res, 400, { ok: false, error: "Online payment isn't set up yet." });
         const email = custEmail(req);
         if (!email) return json(res, 401, { ok: false, needLogin: true, error: "Please sign in or create an account to subscribe." });
+        const b = await jsonBody(req);
+        const tier = b.tierId ? tiers.getTier(b.tierId) : null;
+        const priceId = (tier && tier.enabled && tier.stripePriceId) ? tier.stripePriceId : null;
         const base = baseUrl(req);
         try {
-            const s = await stripe.createCheckoutSession({ email: email, successUrl: base + "/success.html?session_id={CHECKOUT_SESSION_ID}", cancelUrl: base + "/account.html" });
+            const s = await stripe.createCheckoutSession({ email: email, priceId: priceId, successUrl: base + "/success.html?session_id={CHECKOUT_SESSION_ID}", cancelUrl: base + "/account.html" });
             return json(res, 200, { ok: true, url: s.url });
         } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
     }
@@ -283,6 +292,15 @@ const handler = async (req, res) => {
     if (p === "/api/admin/logout" && req.method === "POST") {
         const t = parseCookies(req).haybackup_admin; if (t) sessions.delete(t);
         res.setHeader("Set-Cookie", "haybackup_admin=; HttpOnly; Path=/; Max-Age=0"); return json(res, 200, { ok: true });
+    }
+    if (p === "/api/admin/tiers") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        if (req.method === "GET") return json(res, 200, Object.assign({ ok: true }, tiers.adminConfig()));
+        if (req.method === "POST") {
+            const b = await jsonBody(req);
+            try { const r = await tiers.saveConfig(b); return json(res, 200, { ok: true, warning: r.warning, config: r.config }); }
+            catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+        }
     }
     if (p === "/api/admin/pricing") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });

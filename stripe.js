@@ -67,11 +67,11 @@ function stripeGet(apiPath, key) {
 }
 
 // Create a hosted Checkout Session for the subscription price; returns the session (with .url to redirect to).
-function createCheckoutSession({ email, successUrl, cancelUrl }) {
+function createCheckoutSession({ email, successUrl, cancelUrl, priceId }) {
     const c = cfg();
     const params = [
         "mode=subscription",
-        "line_items[0][price]=" + encodeURIComponent(c.priceId),
+        "line_items[0][price]=" + encodeURIComponent(priceId || c.priceId),
         "line_items[0][quantity]=1",
         "success_url=" + encodeURIComponent(successUrl),
         "cancel_url=" + encodeURIComponent(cancelUrl),
@@ -134,6 +134,15 @@ async function licenseForKey(key) {
     if (active && !expiresAt) expiresAt = new Date(Date.now() + 31 * 86400 * 1000).toISOString(); // safety window until a sub.* webhook sets the real period end
     return { valid: active, plan: "Pro", status, expiresAt,
              message: active ? "Subscription active — thanks for using HayBackup." : ("Subscription is " + status + ". Renew to keep updates & support.") };
+}
+
+// ---- Products & prices (for admin-managed tiers). Prices are immutable in Stripe, so changing a
+// tier's price = creating a NEW price on the same product and pointing the tier at it. ----
+function createProduct(name) { return stripePost("/v1/products", "name=" + encodeURIComponent(name), cfg().secretKey); }
+function createPrice(o) {
+    const p = ["unit_amount=" + Math.round(Number(o.amount) * 100), "currency=" + (o.currency || "usd"),
+               "recurring[interval]=" + encodeURIComponent(o.interval || "month"), "product=" + encodeURIComponent(o.productId)];
+    return stripePost("/v1/prices", p.join("&"), cfg().secretKey);
 }
 
 // ---- Coupons & promotion codes (discounts / promotions) ----
@@ -213,4 +222,4 @@ function recordEvent(event) {
     return null;
 }
 
-module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, markEmailed, generateLicenseKey, createCoupon, createPromotionCode, listPromotionCodes, setPromotionCodeActive, createDiscount, cancelSubscription };
+module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, markEmailed, generateLicenseKey, createCoupon, createPromotionCode, listPromotionCodes, setPromotionCodeActive, createDiscount, cancelSubscription, createProduct, createPrice };

@@ -95,13 +95,30 @@
         +'<p style="font-weight:700;margin:1.3rem 0 .2rem">Activate on your PC</p>'
         +'<ol><li>Install &amp; open HayBackup.</li><li>Go to <b>Settings &rarr; License</b> (or the <b>🔑 Activate license</b> banner).</li><li>Paste your key and click <b>Activate</b>.</li></ol>';
     } else {
-      h+='<p style="margin:.4rem 0 0">You don\'t have an active subscription yet. Subscribe to get your license key and start backing up.</p>'
-        +'<button id="subBtn" onclick="subscribe()">Subscribe — get my license</button><div id="m"></div>';
+      h+='<p style="margin:.4rem 0 .6rem">Choose a plan to get your license key and start backing up:</p>'
+        +'<div id="planPick" class="sub">Loading plans…</div><div id="m"></div>';
     }
     card.innerHTML=h;
+    if(!hasLic) bmLoadPlans();
+  }
+  var CHOSEN=null;
+  function bmLoadPlans(){
+    var pre=new URLSearchParams(location.search).get('tier')||'';
+    fetch('/api/pricing').then(function(r){return r.json();}).then(function(d){
+      var el=document.getElementById('planPick'); if(!el)return; var tiers=d.tiers||[];
+      if(!tiers.length){ el.innerHTML='<p>No plans available right now — please check back soon.</p>'; return; }
+      var def = (pre && tiers.some(function(t){return t.id===pre;})) ? pre : (tiers.find(function(t){return t.popular;})||tiers[0]).id;
+      CHOSEN=def;
+      el.innerHTML=tiers.map(function(t){
+        return '<label style="display:flex;gap:.6rem;align-items:center;border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:.75rem 1rem;margin:.45rem 0;cursor:pointer">'
+          +'<input type="radio" name="tier" value="'+esc(t.id)+'"'+(t.id===def?' checked':'')+' onchange="CHOSEN=this.value">'
+          +'<span style="flex:1;color:#e5edf7"><b>'+esc(t.name)+'</b> — '+esc(d.currency||'$')+esc(t.price)+'/'+esc(t.period||'month')+'</span></label>';
+      }).join('')
+      +'<button id="subBtn" onclick="subscribe()">Subscribe — get my license</button>';
+    }).catch(function(){ var el=document.getElementById('planPick'); if(el) el.innerHTML='<button id="subBtn" onclick="subscribe()">Subscribe</button>'; });
   }
   window.subscribe=function(){ var b=document.getElementById('subBtn'); if(b){b.disabled=true;b.textContent='Redirecting…';}
-    api('/api/checkout/session',{}).then(function(r){ if(r.j.ok&&r.j.url){ location.href=r.j.url; } else { msg('err',r.j.error||'Could not start checkout.'); if(b){b.disabled=false;b.textContent='Subscribe — get my license';} } })
+    api('/api/checkout/session',{tierId:CHOSEN}).then(function(r){ if(r.j.ok&&r.j.url){ location.href=r.j.url; } else { msg('err',r.j.error||'Could not start checkout.'); if(b){b.disabled=false;b.textContent='Subscribe — get my license';} } })
       .catch(function(){ msg('err','Network error — try again.'); if(b){b.disabled=false;b.textContent='Subscribe — get my license';} }); };
   window.doLogout=function(){ api('/api/account/logout',{}).then(function(){ auth('login'); }); };
 
