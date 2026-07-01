@@ -11,6 +11,9 @@ const path = require("path");
 
 const DATA = process.env.DATA_DIR || path.join(__dirname, "data");
 const CFG = path.join(DATA, "stripe-config.json");
+// Pin a stable Stripe API version — this account defaults to a newer version where some request
+// params differ (e.g. promotion_codes rejects `coupon`). Pinning keeps our request shapes valid.
+const STRIPE_VERSION = "2023-10-16";
 const SUBS = path.join(DATA, "subscribers.json");
 
 // Config from env vars (Railway/12-factor secrets) first, then data/stripe-config.json (admin UI).
@@ -43,7 +46,7 @@ function generateLicenseKey() {
 function stripePost(apiPath, body, key) {
     return new Promise((resolve, reject) => {
         const req = https.request({ host: "api.stripe.com", path: apiPath, method: "POST", timeout: 20000,
-            headers: { "Authorization": "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(body) } },
+            headers: { "Authorization": "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(body), "Stripe-Version": STRIPE_VERSION } },
             res => { let d = ""; res.on("data", x => d += x); res.on("end", () => { let j = {}; try { j = JSON.parse(d); } catch (e) {} (res.statusCode >= 200 && res.statusCode < 300) ? resolve(j) : reject(new Error((j.error && j.error.message) || ("Stripe HTTP " + res.statusCode))); }); });
         req.on("timeout", () => req.destroy(new Error("Stripe request timed out")));
         req.on("error", reject);
@@ -55,7 +58,7 @@ function stripePost(apiPath, body, key) {
 function stripeGet(apiPath, key) {
     return new Promise((resolve, reject) => {
         const req = https.request({ host: "api.stripe.com", path: apiPath, method: "GET", timeout: 20000,
-            headers: { "Authorization": "Bearer " + key } },
+            headers: { "Authorization": "Bearer " + key, "Stripe-Version": STRIPE_VERSION } },
             res => { let d = ""; res.on("data", x => d += x); res.on("end", () => { let j = {}; try { j = JSON.parse(d); } catch (e) {} (res.statusCode >= 200 && res.statusCode < 300) ? resolve(j) : reject(new Error((j.error && j.error.message) || ("Stripe HTTP " + res.statusCode))); }); });
         req.on("timeout", () => req.destroy(new Error("Stripe request timed out")));
         req.on("error", reject);
@@ -164,7 +167,7 @@ function cancelSubscription(subId, atPeriodEnd) {
     if (atPeriodEnd) return stripePost("/v1/subscriptions/" + encodeURIComponent(subId), "cancel_at_period_end=true", cfg().secretKey);
     return new Promise((resolve, reject) => {
         const req = https.request({ host: "api.stripe.com", path: "/v1/subscriptions/" + encodeURIComponent(subId), method: "DELETE", timeout: 20000,
-            headers: { "Authorization": "Bearer " + cfg().secretKey } },
+            headers: { "Authorization": "Bearer " + cfg().secretKey, "Stripe-Version": STRIPE_VERSION } },
             res => { let d = ""; res.on("data", x => d += x); res.on("end", () => { let j = {}; try { j = JSON.parse(d); } catch (e) {} (res.statusCode >= 200 && res.statusCode < 300) ? resolve(j) : reject(new Error((j.error && j.error.message) || ("Stripe HTTP " + res.statusCode))); }); });
         req.on("timeout", () => req.destroy(new Error("Stripe request timed out"))); req.on("error", reject); req.end();
     });
