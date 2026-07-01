@@ -109,6 +109,13 @@ async function licenseForKey(key) {
     const list = subs();
     const rec = list.find(x => x.licenseKey && x.licenseKey.toUpperCase() === key.toUpperCase());
     if (!rec) return { valid: false, message: "License key not recognized. Check the key from your purchase confirmation." };
+    // Comped/gifted license: authoritative on our side (no Stripe subscription to consult).
+    if (rec.comp) {
+        const exp = rec.currentPeriodEnd ? new Date(rec.currentPeriodEnd).getTime() : (Date.now() + 3650 * 86400 * 1000);
+        const ok = exp > Date.now();
+        return { valid: ok, plan: rec.plan || "Pro", status: ok ? "active" : "expired", expiresAt: new Date(exp).toISOString(),
+                 message: ok ? "Complimentary license — active." : "Complimentary license has expired." };
+    }
     let status = rec.status || "active", expiresAt = rec.currentPeriodEnd || null;
     if (rec.subscriptionId && cfg().secretKey) {
         try {
@@ -124,6 +131,43 @@ async function licenseForKey(key) {
     if (active && !expiresAt) expiresAt = new Date(Date.now() + 31 * 86400 * 1000).toISOString(); // safety window until a sub.* webhook sets the real period end
     return { valid: active, plan: "Pro", status, expiresAt,
              message: active ? "Subscription active — thanks for using HayBackup." : ("Subscription is " + status + ". Renew to keep updates & support.") };
+}
+
+// ---- Coupons & promotion codes (discounts / promotions) ----
+// A Coupon defines the discount; a Promotion Code is the customer-facing code that applies it.
+function createCoupon(o) {
+    const p = [];
+    if (o.percentOff) p.push("percent_off=" + encodeURIComponent(o.percentOff));
+    else if (o.amountOff) { p.push("amount_off=" + Math.round(Number(o.amountOff) * 100)); p.push("currency=usd"); }
+    p.push("duration=" + encodeURIComponent(o.duration || "once"));
+    if (o.duration === "repeating" && o.durationInMonths) p.push("duration_in_months=" + encodeURIComponent(o.durationInMonths));
+    if (o.name) p.push("name=" + encodeURIComponent(o.name));
+    return stripePost("/v1/coupons", p.join("&"), cfg().secretKey);
+}
+function createPromotionCode(o) {
+    const p = ["coupon=" + encodeURIComponent(o.couponId)];
+    if (o.code) p.push("code=" + encodeURIComponent(o.code));
+    if (o.maxRedemptions) p.push("max_redemptions=" + encodeURIComponent(o.maxRedemptions));
+    if (o.expiresAt) p.push("expires_at=" + encodeURIComponent(o.expiresAt));
+    return stripePost("/v1/promotion_codes", p.join("&"), cfg().secretKey);
+}
+function listPromotionCodes() { return stripeGet("/v1/promotion_codes?limit=100", cfg().secretKey); }
+function setPromotionCodeActive(id, active) { return stripePost("/v1/promotion_codes/" + encodeURIComponent(id), "active=" + (active ? "true" : "false"), cfg().secretKey); }
+// Create a coupon and a promotion code for it in one step. Returns the promotion code object.
+async function createDiscount(o) {
+    const coupon = await createCoupon(o);
+    return createPromotionCode({ couponId: coupon.id, code: o.code, maxRedemptions: o.maxRedemptions, expiresAt: o.expiresAt });
+}
+
+// Cancel a subscription (immediately, or at period end).
+function cancelSubscription(subId, atPeriodEnd) {
+    if (atPeriodEnd) return stripePost("/v1/subscriptions/" + encodeURIComponent(subId), "cancel_at_period_end=true", cfg().secretKey);
+    return new Promise((resolve, reject) => {
+        const req = https.request({ host: "api.stripe.com", path: "/v1/subscriptions/" + encodeURIComponent(subId), method: "DELETE", timeout: 20000,
+            headers: { "Authorization": "Bearer " + cfg().secretKey } },
+            res => { let d = ""; res.on("data", x => d += x); res.on("end", () => { let j = {}; try { j = JSON.parse(d); } catch (e) {} (res.statusCode >= 200 && res.statusCode < 300) ? resolve(j) : reject(new Error((j.error && j.error.message) || ("Stripe HTTP " + res.statusCode))); }); });
+        req.on("timeout", () => req.destroy(new Error("Stripe request timed out"))); req.on("error", reject); req.end();
+    });
 }
 
 // Verify a Stripe webhook signature (Stripe-Signature: "t=...,v1=..."). Needs the RAW request body.
@@ -166,4 +210,4 @@ function recordEvent(event) {
     return null;
 }
 
-module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, markEmailed, generateLicenseKey };
+module.exports = { cfg, saveCfg, configured, subs, createCheckoutSession, getCheckoutSession, ensureSubscriberForSession, licenseForKey, verifyWebhook, recordEvent, markEmailed, generateLicenseKey, createCoupon, createPromotionCode, listPromotionCodes, setPromotionCodeActive, createDiscount, cancelSubscription };

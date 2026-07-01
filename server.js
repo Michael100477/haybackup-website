@@ -327,6 +327,52 @@ const handler = async (req, res) => {
         try { await mailer.sendLicenseEmail(rec); stripe.markEmailed(rec.licenseKey); return json(res, 200, { ok: true, sentTo: rec.email }); }
         catch (e) { return json(res, 500, { ok: false, error: e.message }); }
     }
+    if (p === "/api/admin/users/gift" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const email = String(b.email || "").trim();
+        if (!email) return json(res, 400, { ok: false, error: "Email required." });
+        try {
+            const rec = accounts.grantComp(email, b.months);
+            if (mailer.configured()) mailer.sendLicenseEmail(rec).then(() => stripe.markEmailed(rec.licenseKey)).catch(e => console.error("gift email failed:", e.message));
+            return json(res, 200, { ok: true, licenseKey: rec.licenseKey, expiresAt: rec.currentPeriodEnd });
+        } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+    }
+    if (p === "/api/admin/users/cancel" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const rec = accounts.findByEmail(String(b.email || "").trim());
+        if (!rec || !rec.subscriptionId) return json(res, 400, { ok: false, error: "That user has no active Stripe subscription to cancel." });
+        try { await stripe.cancelSubscription(rec.subscriptionId, b.atPeriodEnd !== false); return json(res, 200, { ok: true }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    // ---- admin: discounts / promo codes (Stripe coupons + promotion codes) ----
+    if (p === "/api/admin/promos") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        if (!stripe.configured()) return json(res, 400, { ok: false, error: "Connect Stripe first." });
+        if (req.method === "GET") {
+            try { const r = await stripe.listPromotionCodes();
+                const promos = (r.data || []).map(pc => ({ id: pc.id, code: pc.code, active: pc.active, timesRedeemed: pc.times_redeemed, maxRedemptions: pc.max_redemptions, expiresAt: pc.expires_at,
+                    percentOff: pc.coupon && pc.coupon.percent_off, amountOff: pc.coupon && pc.coupon.amount_off, duration: pc.coupon && pc.coupon.duration, durationInMonths: pc.coupon && pc.coupon.duration_in_months }));
+                return json(res, 200, { ok: true, promos });
+            } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+        }
+        if (req.method === "POST") {
+            const b = await jsonBody(req); const code = String(b.code || "").trim().toUpperCase();
+            if (!code) return json(res, 400, { ok: false, error: "Enter a code (e.g. LAUNCH20)." });
+            const opt = { code, duration: b.duration || "once", name: "HayBackup " + code };
+            if (b.kind === "amount") opt.amountOff = Number(b.value); else opt.percentOff = Number(b.value);
+            if (!(opt.percentOff > 0) && !(opt.amountOff > 0)) return json(res, 400, { ok: false, error: "Enter a discount amount greater than 0." });
+            if (opt.duration === "repeating") opt.durationInMonths = Math.max(1, parseInt(b.months, 10) || 3);
+            if (b.maxRedemptions) opt.maxRedemptions = parseInt(b.maxRedemptions, 10);
+            try { const pc = await stripe.createDiscount(opt); return json(res, 200, { ok: true, code: pc.code }); }
+            catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+        }
+    }
+    if (p === "/api/admin/promos/toggle" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req);
+        try { await stripe.setPromotionCodeActive(b.id, !!b.active); return json(res, 200, { ok: true }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
     if (p === "/api/admin/email") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
         if (req.method === "GET") { const c = mailer.cfg(); return json(res, 200, { ok: true, configured: mailer.configured(), config: { from: c.from, fromName: c.fromName, replyTo: c.replyTo, host: c.host, hasToken: !!c.token } }); }

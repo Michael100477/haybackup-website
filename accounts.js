@@ -22,7 +22,7 @@ function findByEmail(email) { const e = norm(email); return load().find(x => x.e
 function sanitize(rec) {
     if (!rec) return null;
     return { email: rec.email, name: rec.name || "", hasPassword: !!rec.passwordHash,
-             licenseKey: rec.licenseKey || "", status: rec.status || "",
+             licenseKey: rec.licenseKey || "", status: rec.status || "", comp: !!rec.comp,
              subscriptionId: rec.subscriptionId || "", currentPeriodEnd: rec.currentPeriodEnd || null,
              createdAt: rec.createdAt || null };
 }
@@ -79,4 +79,22 @@ function resetPassword(token, password) {
     return true;
 }
 
-module.exports = { load, save, findByEmail, sanitize, listUsers, register, verify, createReset, emailForReset, resetPassword };
+function genLicenseKey() { const seg = () => crypto.randomBytes(2).toString("hex").toUpperCase(); return "HB-" + seg() + "-" + seg() + "-" + seg() + "-" + seg(); }
+
+// Grant a complimentary (gifted) license for N months (default 12; use a big number for "lifetime").
+// Comped licenses are honored directly by the license server (no Stripe subscription needed).
+function grantComp(email, months) {
+    email = String(email || "").trim();
+    if (!email) throw new Error("Email is required.");
+    const m = Math.max(1, parseInt(months, 10) || 12);
+    const list = load();
+    let rec = list.find(x => x.email && x.email.toLowerCase() === email.toLowerCase());
+    if (!rec) { rec = { email, createdAt: new Date().toISOString() }; list.push(rec); }
+    if (!rec.licenseKey) rec.licenseKey = genLicenseKey();
+    rec.comp = true; rec.status = "active";
+    rec.currentPeriodEnd = new Date(Date.now() + m * 30 * 86400 * 1000).toISOString();
+    save(list);
+    return rec;   // full record (caller may email the licenseKey)
+}
+
+module.exports = { load, save, findByEmail, sanitize, listUsers, register, verify, createReset, emailForReset, resetPassword, grantComp };

@@ -96,12 +96,23 @@
         +'<p class="hint">Webhook endpoint (add this in Stripe → Developers → Webhooks): <code id="stHook"></code> &middot; event <code>checkout.session.completed</code></p>'
         +'<button onclick="bmSaveStripe()">Save Stripe settings</button><div id="stMsg"></div>'
         +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
+        +'<h1 style="font-size:1.2rem">Discounts &amp; promo codes</h1>'
+        +'<p class="sub">Create a code customers type at checkout (e.g. a launch promo). Powered by Stripe.</p>'
+        +'<label>Code</label><input id="pmCode" placeholder="LAUNCH20" style="text-transform:uppercase">'
+        +'<div class="row"><div><label>Type</label><select id="pmKind" style="width:100%;padding:.6rem;border-radius:10px;background:rgba(2,6,23,.55);color:#e6eefb;border:1px solid rgba(148,163,184,.25)"><option value="percent">% off</option><option value="amount">$ off</option></select></div>'
+        +'<div><label>Amount</label><input id="pmValue" type="number" step="0.01" placeholder="20"></div>'
+        +'<div><label>Applies</label><select id="pmDur" style="width:100%;padding:.6rem;border-radius:10px;background:rgba(2,6,23,.55);color:#e6eefb;border:1px solid rgba(148,163,184,.25)"><option value="once">Once</option><option value="forever">Forever</option><option value="repeating">First N months</option></select></div></div>'
+        +'<div class="row"><div><label>Months <span class="hint">(if "first N")</span></label><input id="pmMonths" type="number" placeholder="3"></div>'
+        +'<div><label>Max redemptions <span class="hint">(optional)</span></label><input id="pmMax" type="number" placeholder="unlimited"></div></div>'
+        +'<button onclick="bmCreatePromo()">Create promo code</button><div id="pmMsg"></div>'
+        +'<div id="promoList" class="hint" style="margin-top:.9rem">Loading…</div>'
+        +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
         +'<h1 style="font-size:1.2rem">Registered users</h1>'
         +'<p class="sub">Everyone who created an account. Email them a password-reset link or resend their license key.</p>'
         +'<div id="uMsg"></div>'
         +'<div id="usersList" class="hint">Loading…</div>';
       ['plan','currency','price','period'].forEach(function(id){ document.getElementById(id).addEventListener('input',updatePreview); });
-      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadUsers();
+      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadPromos(); bmLoadUsers();
     });
   }
   window.bmLoadStripe=function(){
@@ -123,17 +134,39 @@
     s.slice().reverse().forEach(function(x){
       var st = x.status||(x.hasPassword?'registered':'');
       var lic = x.licenseKey?('<code>'+esc(x.licenseKey)+'</code>'):'<span style="color:#7e8ca3">—</span>';
-      var e = esc(x.email);
-      h+='<tr style="border-bottom:1px solid rgba(148,163,184,.1)"><td style="padding:.4rem .3rem">'+e+(x.hasPassword?'':' <span style="color:#7e8ca3">(no login)</span>')+'</td>'
+      var e = esc(x.email); var ea = e.replace(/\x27/g,"\\x27");
+      var bstyle='class="ghost" style="margin:0 .25rem .25rem 0;padding:.3rem .55rem;font-size:.75rem"';
+      h+='<tr style="border-bottom:1px solid rgba(148,163,184,.1)"><td style="padding:.4rem .3rem">'+e+(x.hasPassword?'':' <span style="color:#7e8ca3">(no login)</span>')+(x.comp?' <span style="color:#7fd6e6">(gift)</span>':'')+'</td>'
         +'<td>'+esc(st)+'</td><td>'+lic+'</td><td>'+(x.currentPeriodEnd?new Date(x.currentPeriodEnd).toLocaleDateString():'')+'</td>'
-        +'<td style="white-space:nowrap"><button class="ghost" style="margin:0;padding:.3rem .55rem;font-size:.75rem" onclick="bmResetPw(\''+e.replace(/\x27/g,"\\x27")+'\')">Reset password</button> '
-        +'<button class="ghost" style="margin:0;padding:.3rem .55rem;font-size:.75rem" onclick="bmResendLic(\''+e.replace(/\x27/g,"\\x27")+'\')" '+(x.licenseKey?'':'disabled')+'>Resend license</button></td></tr>';
+        +'<td style="white-space:nowrap"><button '+bstyle+' onclick="bmResetPw(\''+ea+'\')">Reset password</button>'
+        +'<button '+bstyle+' onclick="bmResendLic(\''+ea+'\')" '+(x.licenseKey?'':'disabled')+'>Resend license</button>'
+        +'<button '+bstyle+' onclick="bmGift(\''+ea+'\')">Gift</button>'
+        +(x.subscriptionId?('<button '+bstyle+' onclick="bmCancelSub(\''+ea+'\')">Cancel sub</button>'):'')+'</td></tr>';
     });
     el.innerHTML=h+'</table>';
   }).catch(function(){}); };
   function uMsg(cls,t){ var m=document.getElementById('uMsg'); if(m){ m.className='msg '+cls; m.textContent=t; } }
   window.bmResetPw=function(email){ if(!confirm('Email a password-reset link to '+email+'?'))return; api('/api/admin/users/reset-password','POST',{email:email}).then(function(r){ if(r.j.ok) uMsg('ok','Password-reset link emailed to '+email+'.'); else uMsg('err',r.j.error||'Failed to send.'); }); };
   window.bmResendLic=function(email){ if(!confirm('Resend the license key email to '+email+'?'))return; api('/api/admin/users/resend-license','POST',{email:email}).then(function(r){ if(r.j.ok) uMsg('ok','License key emailed to '+email+'.'); else uMsg('err',r.j.error||'Failed to send.'); }); };
+  window.bmGift=function(email){ var mo=prompt('Gift a free license to '+email+' for how many months?\\n(Use a large number like 1200 for lifetime.)','12'); if(mo===null)return; mo=parseInt(mo,10); if(!(mo>0)){ uMsg('err','Enter a number of months.'); return; } api('/api/admin/users/gift','POST',{email:email,months:mo}).then(function(r){ if(r.j.ok){ uMsg('ok','Gifted '+mo+' month(s) to '+email+' — key '+r.j.licenseKey+' emailed.'); bmLoadUsers(); } else uMsg('err',r.j.error||'Failed.'); }); };
+  window.bmCancelSub=function(email){ if(!confirm('Cancel '+email+"'s subscription at the end of the current period?"))return; api('/api/admin/users/cancel','POST',{email:email,atPeriodEnd:true}).then(function(r){ if(r.j.ok){ uMsg('ok','Subscription set to cancel at period end for '+email+'.'); bmLoadUsers(); } else uMsg('err',r.j.error||'Failed.'); }); };
+
+  window.bmLoadPromos=function(){ fetch('/api/admin/promos').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('promoList'); if(!el)return;
+    if(!d.ok){ el.textContent=d.error||'Connect Stripe to manage promo codes.'; return; }
+    var s=d.promos||[]; if(!s.length){ el.textContent='No promo codes yet.'; return; }
+    var h='<table style="width:100%;font-size:.8rem;border-collapse:collapse"><tr style="text-align:left;color:#9fb0c7;border-bottom:1px solid rgba(148,163,184,.2)"><th style="padding:.35rem .3rem">Code</th><th>Discount</th><th>Applies</th><th>Used</th><th></th></tr>';
+    s.forEach(function(x){ var disc=x.percentOff?(x.percentOff+'% off'):(x.amountOff?('$'+(x.amountOff/100)+' off'):'—');
+      var dur=x.duration==='repeating'?('first '+x.durationInMonths+' mo'):(x.duration==='forever'?'forever':'once');
+      var used=x.timesRedeemed+(x.maxRedemptions?('/'+x.maxRedemptions):'');
+      h+='<tr style="border-bottom:1px solid rgba(148,163,184,.1)'+(x.active?'':';opacity:.5')+'"><td style="padding:.4rem .3rem"><code>'+esc(x.code)+'</code></td><td>'+esc(disc)+'</td><td>'+esc(dur)+'</td><td>'+esc(used)+'</td>'
+        +'<td><button class="ghost" style="margin:0;padding:.3rem .55rem;font-size:.75rem" onclick="bmTogglePromo(\''+esc(x.id)+'\','+(x.active?'false':'true')+')">'+(x.active?'Disable':'Enable')+'</button></td></tr>'; });
+    el.innerHTML=h+'</table>';
+  }).catch(function(){}); };
+  window.bmTogglePromo=function(id,active){ api('/api/admin/promos/toggle','POST',{id:id,active:active==='true'||active===true}).then(function(){ bmLoadPromos(); }); };
+  window.bmCreatePromo=function(){ var m=document.getElementById('pmMsg');
+    var body={ code:document.getElementById('pmCode').value.trim(), kind:document.getElementById('pmKind').value, value:document.getElementById('pmValue').value, duration:document.getElementById('pmDur').value, months:document.getElementById('pmMonths').value, maxRedemptions:document.getElementById('pmMax').value };
+    if(!body.code){ m.className='msg err'; m.textContent='Enter a code.'; return; }
+    api('/api/admin/promos','POST',body).then(function(r){ if(r.j.ok){ m.className='msg ok'; m.textContent='Created promo code '+r.j.code+'.'; document.getElementById('pmCode').value=''; document.getElementById('pmValue').value=''; bmLoadPromos(); } else { m.className='msg err'; m.textContent=r.j.error||'Failed.'; } }); };
   window.bmLoadRelease=function(){ fetch('/api/admin/release').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('relCurrent'); if(!el)return; var r=d.release; el.innerHTML = (r&&r.version) ? ('Current published version: <strong>v'+esc(r.version)+'</strong>'+(r.publishedAt?(' &middot; '+new Date(r.publishedAt).toLocaleString()):'')) : 'No release published yet.'; }).catch(function(){}); };
   window.bmPublish=function(){ var m=document.getElementById('relMsg'); var f=document.getElementById('relFile').files[0]; var v=document.getElementById('relVer').value.trim(); var n=document.getElementById('relNotes').value.trim();
     if(!f){ m.className='msg err'; m.textContent='Choose the installer .exe.'; return; }
