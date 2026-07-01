@@ -103,7 +103,7 @@ function clearCustSession(res) { res.setHeader("Set-Cookie", "hb_customer=; Http
 // ---------- helpers ----------
 function send(res, code, body, type) { res.writeHead(code, { "Content-Type": type || "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff" }); res.end(body); }
 function json(res, code, obj) { send(res, code, JSON.stringify(obj), TYPES[".json"]); }
-function readBody(req) { return new Promise(resolve => { let d = ""; req.on("data", c => { d += c; if (d.length > 1e6) req.destroy(); }); req.on("end", () => resolve(d)); }); }
+function readBody(req) { return new Promise(resolve => { let d = ""; req.on("data", c => { d += c; if (d.length > 1e6) req.destroy(); }); req.on("end", () => resolve(d)); req.on("error", () => resolve(d)); req.on("aborted", () => resolve(d)); }); }
 async function jsonBody(req) { try { return JSON.parse((await readBody(req)) || "{}"); } catch { return {}; } }
 // Public base URL. Behind a TLS-terminating proxy (Railway) the socket is plain HTTP, so trust
 // X-Forwarded-Proto/Host to reconstruct the original https:// origin clients actually used.
@@ -133,6 +133,10 @@ function serveStatic(req, res, pathname) {
 }
 
 const handler = async (req, res) => {
+  // Never let one bad/aborted request take down the whole server. Also guard the request/response
+  // streams so a mid-flight client disconnect (very common from bots on a public site) can't crash us.
+  req.on("error", () => {}); res.on("error", () => {});
+  try {
     const u = url.parse(req.url, true);
     const p = u.pathname;
 
@@ -430,6 +434,10 @@ const handler = async (req, res) => {
 
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Method not allowed");
     serveStatic(req, res, p);
+  } catch (e) {
+    console.error("request handler error:", (e && e.stack) || e);
+    try { if (!res.headersSent) json(res, 500, { ok: false, error: "Internal error." }); else res.end(); } catch (x) {}
+  }
 };
 
 // Serve HTTPS when a cert is available (so the hostname works over https with no warning, since this
@@ -444,4 +452,10 @@ function loadTls() {
 }
 const tls = loadTls();
 const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
+// Malformed HTTP (bots/scanners) — reply 400 instead of throwing.
+server.on("clientError", (err, socket) => { try { if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\n\r\n"); else socket.destroy(); } catch (e) {} });
+server.on("error", (e) => console.error("server error:", (e && e.stack) || e));
+// Last-resort safety nets so an unexpected error keeps the service serving instead of crash-looping.
+process.on("uncaughtException", (e) => console.error("uncaughtException:", (e && e.stack) || e));
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", (e && e.stack) || e));
 server.listen(PORT, HOST, () => { console.log(`HayBackup website (dev) running on ${tls ? "https" : "http"}://localhost:${PORT}/  (admin at /admin)`); });
