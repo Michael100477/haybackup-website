@@ -355,6 +355,12 @@ const handler = async (req, res) => {
             return json(res, 200, { ok: true, licenseKey: rec.licenseKey, expiresAt: rec.currentPeriodEnd });
         } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
     }
+    if (p === "/api/admin/users/delete" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const email = String(b.email || "").trim();
+        if (!email) return json(res, 400, { ok: false, error: "Email required." });
+        return accounts.remove(email) ? json(res, 200, { ok: true }) : json(res, 404, { ok: false, error: "No user with that email." });
+    }
     if (p === "/api/admin/users/cancel" && req.method === "POST") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
         const b = await jsonBody(req); const rec = accounts.findByEmail(String(b.email || "").trim());

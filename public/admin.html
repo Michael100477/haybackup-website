@@ -137,7 +137,8 @@
         +'<td style="white-space:nowrap"><button '+bstyle+' onclick="bmResetPw(\''+ea+'\')">Reset password</button>'
         +'<button '+bstyle+' onclick="bmResendLic(\''+ea+'\')" '+(x.licenseKey?'':'disabled')+'>Resend license</button>'
         +'<button '+bstyle+' onclick="bmGift(\''+ea+'\')">Gift</button>'
-        +(x.subscriptionId?('<button '+bstyle+' onclick="bmCancelSub(\''+ea+'\')">Cancel sub</button>'):'')+'</td></tr>';
+        +(x.subscriptionId?('<button '+bstyle+' onclick="bmCancelSub(\''+ea+'\')">Cancel sub</button>'):'')
+        +'<button class="ghost" style="margin:0 .25rem .25rem 0;padding:.3rem .55rem;font-size:.75rem;color:#fca5a5" onclick="bmDeleteUser(\''+ea+'\')">Delete</button></td></tr>';
     });
     el.innerHTML=h+'</table>';
   }).catch(function(){}); };
@@ -146,6 +147,7 @@
   window.bmResendLic=function(email){ if(!confirm('Resend the license key email to '+email+'?'))return; api('/api/admin/users/resend-license','POST',{email:email}).then(function(r){ if(r.j.ok) uMsg('ok','License key emailed to '+email+'.'); else uMsg('err',r.j.error||'Failed to send.'); }); };
   window.bmGift=function(email){ var mo=prompt('Gift a free license to '+email+' for how many months?\\n(Use a large number like 1200 for lifetime.)','12'); if(mo===null)return; mo=parseInt(mo,10); if(!(mo>0)){ uMsg('err','Enter a number of months.'); return; } api('/api/admin/users/gift','POST',{email:email,months:mo}).then(function(r){ if(r.j.ok){ uMsg('ok','Gifted '+mo+' month(s) to '+email+' — key '+r.j.licenseKey+' emailed.'); bmLoadUsers(); } else uMsg('err',r.j.error||'Failed.'); }); };
   window.bmCancelSub=function(email){ if(!confirm('Cancel '+email+"'s subscription at the end of the current period?"))return; api('/api/admin/users/cancel','POST',{email:email,atPeriodEnd:true}).then(function(r){ if(r.j.ok){ uMsg('ok','Subscription set to cancel at period end for '+email+'.'); bmLoadUsers(); } else uMsg('err',r.j.error||'Failed.'); }); };
+  window.bmDeleteUser=function(email){ if(!confirm('Permanently delete '+email+'?\n\nThis removes their account & license record. It does NOT cancel any Stripe subscription — cancel that first if needed.'))return; api('/api/admin/users/delete','POST',{email:email}).then(function(r){ if(r.j.ok){ uMsg('ok','Deleted '+email+'.'); bmLoadUsers(); } else uMsg('err',r.j.error||'Failed.'); }); };
 
   window.bmLoadPromos=function(){ fetch('/api/admin/promos').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('promoList'); if(!el)return;
     if(!d.ok){ el.textContent=d.error||'Connect Stripe to manage promo codes.'; return; }

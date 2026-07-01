@@ -97,4 +97,11 @@ function grantComp(email, months) {
     return rec;   // full record (caller may email the licenseKey)
 }
 
-module.exports = { load, save, findByEmail, sanitize, listUsers, register, verify, createReset, emailForReset, resetPassword, grantComp };
+function remove(email) {
+    const e = norm(email); const list = load();
+    const i = list.findIndex(x => x.email && x.email.toLowerCase() === e);
+    if (i < 0) return false;
+    list.splice(i, 1); save(list); return true;
+}
+
+module.exports = { load, save, findByEmail, sanitize, listUsers, register, verify, createReset, emailForReset, resetPassword, grantComp, remove };
