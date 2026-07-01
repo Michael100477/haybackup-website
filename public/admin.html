@@ -95,10 +95,13 @@
         +'<label>Webhook signing secret</label><input id="stWebhook" type="password" placeholder="whsec_…">'
         +'<p class="hint">Webhook endpoint (add this in Stripe → Developers → Webhooks): <code id="stHook"></code> &middot; event <code>checkout.session.completed</code></p>'
         +'<button onclick="bmSaveStripe()">Save Stripe settings</button><div id="stMsg"></div>'
-        +'<h1 style="font-size:1.05rem;margin-top:1.4rem">Subscribers</h1>'
-        +'<div id="subsList" class="hint">Loading…</div>';
+        +'<hr style="margin:1.6rem 0;border:none;border-top:1px solid rgba(148,163,184,.18)">'
+        +'<h1 style="font-size:1.2rem">Registered users</h1>'
+        +'<p class="sub">Everyone who created an account. Email them a password-reset link or resend their license key.</p>'
+        +'<div id="uMsg"></div>'
+        +'<div id="usersList" class="hint">Loading…</div>';
       ['plan','currency','price','period'].forEach(function(id){ document.getElementById(id).addEventListener('input',updatePreview); });
-      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadSubs();
+      updatePreview(); bmLoadRelease(); bmLoadStripe(); bmLoadUsers();
     });
   }
   window.bmLoadStripe=function(){
@@ -114,12 +117,23 @@
     var body={ secretKey:document.getElementById('stSecret').value.trim(), priceId:document.getElementById('stPrice').value.trim(), webhookSecret:document.getElementById('stWebhook').value.trim() };
     api('/api/admin/stripe','POST',body).then(function(r){ if(r.j.ok){ m.className='msg ok'; m.textContent='Stripe settings saved.'; document.getElementById('stSecret').value=''; document.getElementById('stWebhook').value=''; bmLoadStripe(); } else { m.className='msg err'; m.textContent=r.j.error||'Save failed.'; } });
   };
-  window.bmLoadSubs=function(){ fetch('/api/admin/subscribers').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('subsList'); if(!el)return; var s=d.subscribers||[];
-    if(!s.length){ el.textContent='No subscribers yet.'; return; }
-    var h='<table style="width:100%;font-size:.82rem;border-collapse:collapse"><tr style="text-align:left;color:#9fb0c7"><th>Email</th><th>Status</th><th>License key</th><th>Renews</th></tr>';
-    s.slice().reverse().forEach(function(x){ h+='<tr><td>'+esc(x.email)+'</td><td>'+esc(x.status||'')+'</td><td><code>'+esc(x.licenseKey||'')+'</code></td><td>'+(x.currentPeriodEnd?new Date(x.currentPeriodEnd).toLocaleDateString():'')+'</td></tr>'; });
+  window.bmLoadUsers=function(){ fetch('/api/admin/users').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('usersList'); if(!el)return; var s=d.users||[];
+    if(!s.length){ el.textContent='No registered users yet.'; return; }
+    var h='<table style="width:100%;font-size:.8rem;border-collapse:collapse"><tr style="text-align:left;color:#9fb0c7;border-bottom:1px solid rgba(148,163,184,.2)"><th style="padding:.35rem .3rem">Email</th><th>Status</th><th>License key</th><th>Renews</th><th>Actions</th></tr>';
+    s.slice().reverse().forEach(function(x){
+      var st = x.status||(x.hasPassword?'registered':'');
+      var lic = x.licenseKey?('<code>'+esc(x.licenseKey)+'</code>'):'<span style="color:#7e8ca3">—</span>';
+      var e = esc(x.email);
+      h+='<tr style="border-bottom:1px solid rgba(148,163,184,.1)"><td style="padding:.4rem .3rem">'+e+(x.hasPassword?'':' <span style="color:#7e8ca3">(no login)</span>')+'</td>'
+        +'<td>'+esc(st)+'</td><td>'+lic+'</td><td>'+(x.currentPeriodEnd?new Date(x.currentPeriodEnd).toLocaleDateString():'')+'</td>'
+        +'<td style="white-space:nowrap"><button class="ghost" style="margin:0;padding:.3rem .55rem;font-size:.75rem" onclick="bmResetPw(\''+e.replace(/\x27/g,"\\x27")+'\')">Reset password</button> '
+        +'<button class="ghost" style="margin:0;padding:.3rem .55rem;font-size:.75rem" onclick="bmResendLic(\''+e.replace(/\x27/g,"\\x27")+'\')" '+(x.licenseKey?'':'disabled')+'>Resend license</button></td></tr>';
+    });
     el.innerHTML=h+'</table>';
   }).catch(function(){}); };
+  function uMsg(cls,t){ var m=document.getElementById('uMsg'); if(m){ m.className='msg '+cls; m.textContent=t; } }
+  window.bmResetPw=function(email){ if(!confirm('Email a password-reset link to '+email+'?'))return; api('/api/admin/users/reset-password','POST',{email:email}).then(function(r){ if(r.j.ok) uMsg('ok','Password-reset link emailed to '+email+'.'); else uMsg('err',r.j.error||'Failed to send.'); }); };
+  window.bmResendLic=function(email){ if(!confirm('Resend the license key email to '+email+'?'))return; api('/api/admin/users/resend-license','POST',{email:email}).then(function(r){ if(r.j.ok) uMsg('ok','License key emailed to '+email+'.'); else uMsg('err',r.j.error||'Failed to send.'); }); };
   window.bmLoadRelease=function(){ fetch('/api/admin/release').then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('relCurrent'); if(!el)return; var r=d.release; el.innerHTML = (r&&r.version) ? ('Current published version: <strong>v'+esc(r.version)+'</strong>'+(r.publishedAt?(' &middot; '+new Date(r.publishedAt).toLocaleString()):'')) : 'No release published yet.'; }).catch(function(){}); };
   window.bmPublish=function(){ var m=document.getElementById('relMsg'); var f=document.getElementById('relFile').files[0]; var v=document.getElementById('relVer').value.trim(); var n=document.getElementById('relNotes').value.trim();
     if(!f){ m.className='msg err'; m.textContent='Choose the installer .exe.'; return; }

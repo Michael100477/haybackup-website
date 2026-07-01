@@ -11,6 +11,7 @@ const url = require("url");
 const crypto = require("crypto");
 const stripe = require("./stripe");
 const mailer = require("./mailer");
+const accounts = require("./accounts");
 
 const PORT = process.env.PORT || 8090;
 const HOST = process.env.HOST || "::";   // dual-stack (IPv4+IPv6) so the hostname works even when it resolves to IPv6 first
@@ -92,6 +93,12 @@ function tokenAuthed(req) {
 function isAuthed(req) { if (tokenAuthed(req)) return true; const t = parseCookies(req).haybackup_admin; if (!t) return false; const e = sessions.get(t); if (!e || e < Date.now()) { sessions.delete(t); return false; } return true; }
 function setSession(res) { const t = crypto.randomBytes(32).toString("hex"); sessions.set(t, Date.now() + SESSION_MS); res.setHeader("Set-Cookie", `haybackup_admin=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 86400}`); }
 
+// ---------- customer accounts sessions (separate from admin) ----------
+const custSessions = new Map();               // token -> { email, exp }
+function custEmail(req) { const t = parseCookies(req).hb_customer; if (!t) return null; const e = custSessions.get(t); if (!e || e.exp < Date.now()) { custSessions.delete(t); return null; } return e.email; }
+function setCustSession(res, email) { const t = crypto.randomBytes(32).toString("hex"); custSessions.set(t, { email, exp: Date.now() + SESSION_MS }); res.setHeader("Set-Cookie", `hb_customer=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${7 * 86400}`); }
+function clearCustSession(res) { res.setHeader("Set-Cookie", "hb_customer=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"); }
+
 // ---------- helpers ----------
 function send(res, code, body, type) { res.writeHead(code, { "Content-Type": type || "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff" }); res.end(body); }
 function json(res, code, obj) { send(res, code, JSON.stringify(obj), TYPES[".json"]); }
@@ -145,12 +152,40 @@ const handler = async (req, res) => {
     // ---- Stripe Checkout (subscription) ----
     if (p === "/api/checkout/session" && req.method === "POST") {
         if (!stripe.configured()) return json(res, 400, { ok: false, error: "Online payment isn't set up yet." });
-        const b = await jsonBody(req);
+        const email = custEmail(req);
+        if (!email) return json(res, 401, { ok: false, needLogin: true, error: "Please sign in or create an account to subscribe." });
         const base = baseUrl(req);
         try {
-            const s = await stripe.createCheckoutSession({ email: String(b.email || "").trim(), successUrl: base + "/success.html?session_id={CHECKOUT_SESSION_ID}", cancelUrl: base + "/checkout.html" });
+            const s = await stripe.createCheckoutSession({ email: email, successUrl: base + "/success.html?session_id={CHECKOUT_SESSION_ID}", cancelUrl: base + "/account.html" });
             return json(res, 200, { ok: true, url: s.url });
         } catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    // ---- Customer accounts: register-to-buy, login, portal, password reset ----
+    if (p === "/api/account/register" && req.method === "POST") {
+        const b = await jsonBody(req);
+        try { const u = accounts.register({ email: b.email, password: b.password, name: b.name }); setCustSession(res, u.email); return json(res, 200, { ok: true, user: u }); }
+        catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+    }
+    if (p === "/api/account/login" && req.method === "POST") {
+        const b = await jsonBody(req);
+        if (accounts.verify(b.email, b.password)) { const u = accounts.sanitize(accounts.findByEmail(b.email)); setCustSession(res, u.email); return json(res, 200, { ok: true, user: u }); }
+        return json(res, 401, { ok: false, error: "Incorrect email or password." });
+    }
+    if (p === "/api/account/logout" && req.method === "POST") { clearCustSession(res); return json(res, 200, { ok: true }); }
+    if (p === "/api/account/me" && req.method === "GET") {
+        const email = custEmail(req); if (!email) return json(res, 200, { ok: true, user: null });
+        return json(res, 200, { ok: true, user: accounts.sanitize(accounts.findByEmail(email)) });
+    }
+    if (p === "/api/account/forgot" && req.method === "POST") {
+        const b = await jsonBody(req); const email = String(b.email || "").trim();
+        const token = accounts.createReset(email);
+        if (token && mailer.configured()) mailer.sendPasswordReset(email, baseUrl(req) + "/reset.html?token=" + token).catch(e => console.error("reset email failed:", e.message));
+        return json(res, 200, { ok: true });   // never reveal whether the email exists
+    }
+    if (p === "/api/account/reset" && req.method === "POST") {
+        const b = await jsonBody(req);
+        try { const ok = accounts.resetPassword(b.token, b.password); if (!ok) return json(res, 400, { ok: false, error: "This reset link is invalid or has expired — please request a new one." }); return json(res, 200, { ok: true }); }
+        catch (e) { return json(res, 400, { ok: false, error: e.message }); }
     }
     // After-checkout: the success page calls this with ?session_id=... to show the buyer their license key.
     if (p === "/api/checkout/result" && req.method === "GET") {
@@ -268,6 +303,29 @@ const handler = async (req, res) => {
     if (p === "/api/admin/subscribers" && req.method === "GET") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
         return json(res, 200, { ok: true, subscribers: stripe.subs() });
+    }
+    // ---- admin: registered users (accounts + subscriptions) ----
+    if (p === "/api/admin/users" && req.method === "GET") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        return json(res, 200, { ok: true, users: accounts.listUsers() });
+    }
+    if (p === "/api/admin/users/reset-password" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const email = String(b.email || "").trim();
+        if (!accounts.findByEmail(email)) return json(res, 404, { ok: false, error: "No user with that email." });
+        if (!mailer.configured()) return json(res, 400, { ok: false, error: "Email isn't configured — can't send the reset link." });
+        const token = accounts.createReset(email);
+        try { await mailer.sendPasswordReset(email, baseUrl(req) + "/reset.html?token=" + token); return json(res, 200, { ok: true, sentTo: email }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
+    }
+    if (p === "/api/admin/users/resend-license" && req.method === "POST") {
+        if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });
+        const b = await jsonBody(req); const rec = accounts.findByEmail(String(b.email || "").trim());
+        if (!rec || !rec.email) return json(res, 404, { ok: false, error: "No user with that email." });
+        if (!rec.licenseKey) return json(res, 400, { ok: false, error: "That user has no license yet (no completed purchase)." });
+        if (!mailer.configured()) return json(res, 400, { ok: false, error: "Email isn't configured." });
+        try { await mailer.sendLicenseEmail(rec); stripe.markEmailed(rec.licenseKey); return json(res, 200, { ok: true, sentTo: rec.email }); }
+        catch (e) { return json(res, 500, { ok: false, error: e.message }); }
     }
     if (p === "/api/admin/email") {
         if (!isAuthed(req)) return json(res, 401, { ok: false, error: "Not signed in." });

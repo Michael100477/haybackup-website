@@ -90,7 +90,8 @@ async function ensureSubscriberForSession(sessionId) {
     const list = subs();
     let rec = (s.subscription && list.find(x => x.subscriptionId === s.subscription))
            || (email && list.find(x => x.email && x.email.toLowerCase() === email.toLowerCase())) || null;
-    if (!rec) { rec = { email, licenseKey: generateLicenseKey(), createdAt: new Date().toISOString() }; list.push(rec); }
+    if (!rec) { rec = { email, createdAt: new Date().toISOString() }; list.push(rec); }
+    if (!rec.licenseKey) rec.licenseKey = generateLicenseKey();
     if (email && !rec.email) rec.email = email;
     rec.customerId = s.customer || rec.customerId;
     rec.subscriptionId = s.subscription || rec.subscriptionId;
@@ -144,7 +145,8 @@ function recordEvent(event) {
         const s = event.data.object || {};
         const email = (s.customer_details && s.customer_details.email) || s.customer_email || "";
         let rec = email ? list.find(x => x.email && x.email.toLowerCase() === email.toLowerCase()) : null;
-        if (!rec) { rec = { email, licenseKey: generateLicenseKey(), createdAt: new Date().toISOString() }; list.push(rec); }
+        if (!rec) { rec = { email, createdAt: new Date().toISOString() }; list.push(rec); }
+        if (!rec.licenseKey) rec.licenseKey = generateLicenseKey();   // issue a key even if the account pre-existed (registered-then-bought)
         rec.customerId = s.customer || rec.customerId;
         rec.subscriptionId = s.subscription || rec.subscriptionId;
         rec.status = "active";

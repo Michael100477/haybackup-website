@@ -94,4 +94,21 @@ function sendLicenseEmail(rec) {
         .then(() => true);
 }
 
-module.exports = { cfg, saveCfg, configured, send, sendLicenseEmail, licenseEmailHtml, licenseEmailText };
+function passwordResetHtml(link) {
+    return `<!DOCTYPE html><html><body style="margin:0;background:#070b16;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#e5edf7">
+<div style="max-width:560px;margin:0 auto;padding:28px 22px">
+  <h1 style="font-size:22px;margin:0 0 6px">Reset your HayBackup password</h1>
+  <p style="color:#9fb0c7;line-height:1.55;margin:0 0 18px">We received a request to reset the password for your HayBackup account. Click the button below to choose a new one. This link expires in 1 hour.</p>
+  <p style="margin:0 0 20px"><a href="${link}" style="display:inline-block;background:linear-gradient(90deg,#22d3ee,#3b82f6);color:#04121f;font-weight:700;text-decoration:none;border-radius:11px;padding:12px 22px">Reset my password</a></p>
+  <p style="color:#7c8aa0;font-size:13px;line-height:1.5;margin:0">If the button doesn't work, paste this link into your browser:<br><span style="color:#9fb0c7">${link}</span></p>
+  <p style="color:#7c8aa0;font-size:13px;margin:14px 0 0">Didn't request this? You can safely ignore this email — your password won't change.</p>
+</div></body></html>`;
+}
+function sendPasswordReset(email, link) {
+    return send({ to: email, subject: "Reset your HayBackup password",
+        html: passwordResetHtml(link),
+        text: "Reset your HayBackup password\n\nOpen this link (expires in 1 hour) to choose a new password:\n" + link + "\n\nDidn't request this? You can ignore this email.\n" })
+        .then(() => true);
+}
+
+module.exports = { cfg, saveCfg, configured, send, sendLicenseEmail, sendPasswordReset, licenseEmailHtml, licenseEmailText };

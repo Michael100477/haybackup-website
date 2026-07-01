@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your account — HayBackup</title>
+<style>
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; color:#e5edf7; background:#070b16; line-height:1.6; min-height:100vh; }
+  .bg{ position:fixed; inset:0; z-index:-1; background:radial-gradient(900px 700px at 20% 8%,rgba(34,211,238,.18),transparent 60%),radial-gradient(900px 700px at 85% 92%,rgba(59,130,246,.20),transparent 60%),linear-gradient(160deg,#070b16,#0a1426 55%,#06121c); }
+  a{ color:#7dd3fc; text-decoration:none; }
+  .wrap{ max-width:520px; margin:0 auto; padding:1.4rem 1.2rem 4rem; }
+  .top{ display:flex; align-items:center; justify-content:space-between; padding:.6rem 0 1.5rem; }
+  .logo{ font-weight:800; font-size:1.15rem; } .logo span{ color:#22d3ee; }
+  .card{ background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.18); border-radius:18px; padding:2rem; backdrop-filter:blur(14px); box-shadow:0 30px 70px rgba(0,0,0,.5); }
+  h1{ font-size:1.5rem; margin-bottom:.3rem; } .sub{ color:#9fb0c7; margin-bottom:1.3rem; font-size:.92rem; }
+  label{ display:block; font-weight:600; font-size:.82rem; margin:.8rem 0 .3rem; color:#cbd5e1; }
+  input{ width:100%; padding:.7rem .8rem; border-radius:10px; border:1px solid rgba(148,163,184,.25); background:rgba(2,6,23,.55); color:#e6eefb; font:inherit; outline:none; }
+  input:focus{ border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.18); }
+  button{ margin-top:1.3rem; width:100%; border:0; border-radius:11px; padding:.85rem; font-weight:700; font-size:1rem; color:#04121f; background:linear-gradient(90deg,#22d3ee,#3b82f6); cursor:pointer; }
+  button:hover{ transform:translateY(-1px); } button:disabled{ opacity:.6; cursor:default; transform:none; }
+  button.ghost{ background:rgba(255,255,255,.08); color:#dbeafe; box-shadow:none; }
+  .tabs{ display:flex; gap:.4rem; margin-bottom:1rem; }
+  .tabs button{ margin:0; flex:1; padding:.55rem; font-size:.9rem; background:rgba(255,255,255,.06); color:#9fb0c7; box-shadow:none; }
+  .tabs button.on{ background:linear-gradient(90deg,#22d3ee,#3b82f6); color:#04121f; }
+  .msg{ margin-top:1rem; padding:.7rem .9rem; border-radius:10px; font-size:.9rem; }
+  .ok{ background:rgba(34,197,94,.15); border:1px solid rgba(34,197,94,.4); color:#bbf7d0; }
+  .err{ background:rgba(239,68,68,.15); border:1px solid rgba(239,68,68,.4); color:#fecaca; }
+  .link{ display:inline-block; margin-top:.9rem; font-size:.85rem; cursor:pointer; }
+  .keybox{ margin:1rem 0; padding:1rem 1.1rem; border:1px solid rgba(34,211,238,.35); border-radius:12px; background:rgba(34,211,238,.06); }
+  .keylabel{ font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:#7fd6e6; margin-bottom:.4rem; }
+  .key{ font-family:"Consolas",monospace; font-size:1.3rem; font-weight:700; color:#eaf6ff; letter-spacing:.03em; user-select:all; word-break:break-all; }
+  .pill{ display:inline-block; font-size:.75rem; font-weight:700; padding:.15rem .55rem; border-radius:999px; }
+  .pill.active{ background:rgba(34,197,94,.18); color:#bbf7d0; } .pill.none{ background:rgba(148,163,184,.18); color:#cbd5e1; }
+  ol{ color:#c4d2e4; line-height:1.7; padding-left:1.15rem; margin:.4rem 0 0; }
+  .rowbtns{ display:flex; gap:.6rem; } .rowbtns button{ flex:1; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="wrap">
+  <div class="top"><div class="logo">🗄️ Hay<span>Backup</span></div><a href="/">← Back to site</a></div>
+  <div class="card" id="card"><div class="sub">Loading…</div></div>
+</div>
+<script>
+  var card=document.getElementById('card');
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+  function api(path,body){ return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){return{status:r.status,j:j};});}); }
+
+  function load(){ fetch('/api/account/me').then(function(r){return r.json();}).then(function(d){ if(d.user) portal(d.user); else auth('login'); }).catch(function(){ auth('login'); }); }
+
+  function auth(mode){
+    card.innerHTML=
+      '<div class="tabs"><button id="tLogin" onclick="auth(\'login\')">Sign in</button><button id="tReg" onclick="auth(\'register\')">Create account</button></div>'
+      +'<div id="pane"></div>';
+    document.getElementById(mode==='login'?'tLogin':'tReg').classList.add('on');
+    var pane=document.getElementById('pane');
+    if(mode==='login'){
+      pane.innerHTML='<h1>Welcome back</h1><p class="sub">Sign in to manage your subscription and license.</p>'
+        +'<label>Email</label><input id="email" type="email" autocomplete="email" autofocus>'
+        +'<label>Password</label><input id="pw" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')doLogin()">'
+        +'<button onclick="doLogin()">Sign in</button>'
+        +'<span class="link" onclick="forgot()">Forgot your password?</span>'
+        +'<div id="m"></div>';
+    } else {
+      pane.innerHTML='<h1>Create your account</h1><p class="sub">You\'ll need an account to buy and manage a HayBackup license.</p>'
+        +'<label>Name <span style="color:#7e8ca3;font-weight:400">(optional)</span></label><input id="name" autocomplete="name">'
+        +'<label>Email</label><input id="email" type="email" autocomplete="email">'
+        +'<label>Password <span style="color:#7e8ca3;font-weight:400">(min 8 characters)</span></label><input id="pw" type="password" autocomplete="new-password">'
+        +'<button onclick="doRegister()">Create account</button><div id="m"></div>';
+    }
+  }
+  function msg(cls,t){ var m=document.getElementById('m'); if(m){ m.className='msg '+cls; m.textContent=t; } }
+  window.auth=auth;
+  window.doLogin=function(){ api('/api/account/login',{email:val('email'),password:val('pw')}).then(function(r){ if(r.j.ok) portal(r.j.user); else msg('err',r.j.error||'Sign in failed.'); }); };
+  window.doRegister=function(){ api('/api/account/register',{name:val('name'),email:val('email'),password:val('pw')}).then(function(r){ if(r.j.ok) portal(r.j.user); else msg('err',r.j.error||'Could not create account.'); }); };
+  window.forgot=function(){
+    card.innerHTML='<h1>Reset your password</h1><p class="sub">Enter your account email and we\'ll send you a reset link.</p>'
+      +'<label>Email</label><input id="email" type="email" autocomplete="email" autofocus>'
+      +'<button onclick="doForgot()">Send reset link</button><span class="link" onclick="auth(\'login\')">← Back to sign in</span><div id="m"></div>';
+  };
+  window.doForgot=function(){ api('/api/account/forgot',{email:val('email')}).then(function(){ msg('ok','If that email has an account, a reset link is on its way. Check your inbox.'); }); };
+  function val(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+
+  function portal(u){
+    var hasLic = u.licenseKey && (u.status==='active'||u.status==='trialing');
+    var statusPill = hasLic ? '<span class="pill active">Active</span>' : '<span class="pill none">No active subscription</span>';
+    var h='<div style="display:flex;justify-content:space-between;align-items:center"><h1>Your account</h1><button class="ghost" style="margin:0;width:auto;padding:.5rem .9rem" onclick="doLogout()">Sign out</button></div>'
+      +'<p class="sub">'+esc(u.email)+' &middot; '+statusPill+'</p>';
+    if(hasLic){
+      h+='<div class="keybox"><div class="keylabel">Your license key</div><div class="key" id="lk">'+esc(u.licenseKey)+'</div>'
+        +'<button style="margin-top:.7rem;width:auto;padding:.4rem .8rem;font-size:.85rem" onclick="navigator.clipboard.writeText(\''+esc(u.licenseKey)+'\');this.textContent=\'Copied\';">Copy key</button></div>'
+        +(u.currentPeriodEnd?('<p class="sub" style="margin:.2rem 0 1rem">Renews '+new Date(u.currentPeriodEnd).toLocaleDateString()+'.</p>'):'')
+        +'<div class="rowbtns"><button onclick="location.href=\'/download/installer\'">⬇ Download HayBackup</button></div>'
+        +'<p style="font-weight:700;margin:1.3rem 0 .2rem">Activate on your PC</p>'
+        +'<ol><li>Install &amp; open HayBackup.</li><li>Go to <b>Settings &rarr; License</b> (or the <b>🔑 Activate license</b> banner).</li><li>Paste your key and click <b>Activate</b>.</li></ol>';
+    } else {
+      h+='<p style="margin:.4rem 0 0">You don\'t have an active subscription yet. Subscribe to get your license key and start backing up.</p>'
+        +'<button id="subBtn" onclick="subscribe()">Subscribe — get my license</button><div id="m"></div>';
+    }
+    card.innerHTML=h;
+  }
+  window.subscribe=function(){ var b=document.getElementById('subBtn'); if(b){b.disabled=true;b.textContent='Redirecting…';}
+    api('/api/checkout/session',{}).then(function(r){ if(r.j.ok&&r.j.url){ location.href=r.j.url; } else { msg('err',r.j.error||'Could not start checkout.'); if(b){b.disabled=false;b.textContent='Subscribe — get my license';} } })
+      .catch(function(){ msg('err','Network error — try again.'); if(b){b.disabled=false;b.textContent='Subscribe — get my license';} }); };
+  window.doLogout=function(){ api('/api/account/logout',{}).then(function(){ auth('login'); }); };
+
+  load();
+</script>
+</body>
+</html>
